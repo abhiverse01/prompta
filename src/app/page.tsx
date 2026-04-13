@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { CHARACTERS, CharacterConfig } from '@/game/characters';
-import { GameEngine, CharacterData } from '@/game/engine';
+import { GameEngine } from '@/game/engine';
 
 /* ─────────────────────────────────────────────────────────────────── */
 

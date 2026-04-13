@@ -13,11 +13,15 @@ export class HUD {
   private chatInput: HTMLInputElement;
   private playerCountEl: HTMLElement;
   private coordsEl: HTMLElement;
+  private nameTagContainer: HTMLElement;
   private chatVisible = false;
 
   /* world position of the local player (updated every frame) */
   private px = 0;
   private pz = 0;
+
+  /* Pooled name tag elements to avoid per-frame DOM creation */
+  private tagPool: HTMLDivElement[] = [];
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -66,8 +70,8 @@ export class HUD {
         "></canvas>
       </div>
 
-      <!-- Chat -->
-      <div id="hud-chat" style="position:fixed;bottom:20px;left:20px;z-index:20;width:340px;">
+      <!-- Chat — pointer-events:auto so the input and log are clickable -->
+      <div id="hud-chat" style="position:fixed;bottom:20px;left:20px;z-index:20;width:340px;pointer-events:auto;">
         <div id="chat-log" style="
           max-height:180px;overflow-y:auto;padding:8px;
           background:rgba(0,0,0,0.35);border-radius:8px 8px 0 0;
@@ -93,12 +97,33 @@ export class HUD {
       <div id="name-tags" style="position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:15;"></div>
     `;
 
-    this.minimapCanvas = container.querySelector('#hud-minimap') as HTMLCanvasElement;
-    this.minimapCtx = this.minimapCanvas.getContext('2d')!;
-    this.chatLog = container.querySelector('#chat-log') as HTMLDivElement;
-    this.chatInput = container.querySelector('#chat-input') as HTMLInputElement;
-    this.playerCountEl = container.querySelector('#online-count') as HTMLElement;
-    this.coordsEl = container.querySelector('#hud-coords') as HTMLElement;
+    // Safe query selectors with fallbacks
+    const minimapEl = container.querySelector('#hud-minimap');
+    if (!minimapEl) throw new Error('HUD: minimap canvas not found');
+    this.minimapCanvas = minimapEl as HTMLCanvasElement;
+    const ctx = this.minimapCanvas.getContext('2d');
+    if (!ctx) throw new Error('HUD: cannot get 2d context');
+    this.minimapCtx = ctx;
+
+    const chatLogEl = container.querySelector('#chat-log');
+    if (!chatLogEl) throw new Error('HUD: chat-log not found');
+    this.chatLog = chatLogEl as HTMLDivElement;
+
+    const chatInputEl = container.querySelector('#chat-input');
+    if (!chatInputEl) throw new Error('HUD: chat-input not found');
+    this.chatInput = chatInputEl as HTMLInputElement;
+
+    const countEl = container.querySelector('#online-count');
+    if (!countEl) throw new Error('HUD: online-count not found');
+    this.playerCountEl = countEl as HTMLElement;
+
+    const coordsEl = container.querySelector('#hud-coords');
+    if (!coordsEl) throw new Error('HUD: coords not found');
+    this.coordsEl = coordsEl as HTMLElement;
+
+    const nameTagEl = container.querySelector('#name-tags');
+    if (!nameTagEl) throw new Error('HUD: name-tags not found');
+    this.nameTagContainer = nameTagEl as HTMLElement;
   }
 
   /** Bind chat toggle key and input submission */
@@ -138,14 +163,29 @@ export class HUD {
     this.chatInput.blur();
   }
 
-  /** Add a chat message to the log */
+  /** Add a chat message to the log (XSS-safe: uses textContent for user data) */
   addMessage(msg: { name: string; text: string; time: number }): void {
     const el = document.createElement('div');
     el.style.marginBottom = '3px';
+
+    const timeSpan = document.createElement('span');
+    timeSpan.style.color = 'rgba(255,255,255,0.35)';
     const time = new Date(msg.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    el.innerHTML = `<span style="color:rgba(255,255,255,0.35)">${time}</span> <b style="color:#fbbf24">${msg.name}</b>: ${msg.text}`;
+    timeSpan.textContent = time;
+
+    const nameB = document.createElement('b');
+    nameB.style.color = '#fbbf24';
+    nameB.textContent = msg.name;
+
+    const textNode = document.createTextNode(`: ${msg.text}`);
+
+    el.appendChild(timeSpan);
+    el.appendChild(document.createTextNode(' '));
+    el.appendChild(nameB);
+    el.appendChild(textNode);
     this.chatLog.appendChild(el);
     this.chatLog.scrollTop = this.chatLog.scrollHeight;
+
     // Limit visible messages
     while (this.chatLog.children.length > 30) {
       this.chatLog.removeChild(this.chatLog.firstChild!);
@@ -176,6 +216,7 @@ export class HUD {
     remotePlayers: Map<string, RemotePlayer>,
     cameraYaw: number
   ): void {
+    if (!this.minimapCtx) return;
     const ctx = this.minimapCtx;
     const w = this.minimapCanvas.width;
     const h = this.minimapCanvas.height;
@@ -250,17 +291,21 @@ export class HUD {
     ctx.restore();
   }
 
-  /** Project 3D positions to 2D screen and draw name tags */
+  /** Project 3D positions to 2D screen and draw name tags (pooled, no innerHTML thrashing) */
   drawNameTags(
     camera: THREE.PerspectiveCamera,
     remotePlayers: Map<string, RemotePlayer>
   ): void {
-    const container = this.container.querySelector('#name-tags') as HTMLElement;
-    // Remove old tags
-    container.innerHTML = '';
-
+    const container = this.nameTagContainer;
     const w = window.innerWidth;
     const h = window.innerHeight;
+
+    // Hide all existing tags first
+    for (const tag of this.tagPool) {
+      tag.style.display = 'none';
+    }
+
+    let poolIdx = 0;
 
     remotePlayers.forEach((p) => {
       if (!p.mesh) return;
@@ -276,15 +321,27 @@ export class HUD {
       // Check if on screen
       if (sx < -100 || sx > w + 100 || sy < -50 || sy > h + 50) return;
 
-      const tag = document.createElement('div');
-      tag.style.cssText = `
-        position:absolute;left:${sx}px;top:${sy}px;transform:translate(-50%,-100%);
-        font-family:monospace;font-size:11px;color:#fff;
-        text-shadow:0 0 4px rgba(0,0,0,0.8), 0 1px 2px rgba(0,0,0,0.9);
-        white-space:nowrap;pointer-events:none;
-      `;
-      tag.textContent = p.name;
-      container.appendChild(tag);
+      // Get or create a pooled element
+      let tag: HTMLDivElement;
+      if (poolIdx < this.tagPool.length) {
+        tag = this.tagPool[poolIdx];
+      } else {
+        tag = document.createElement('div');
+        tag.style.cssText = `
+          position:absolute;left:0;top:0;transform:translate(-50%,-100%);
+          font-family:monospace;font-size:11px;color:#fff;
+          text-shadow:0 0 4px rgba(0,0,0,0.8), 0 1px 2px rgba(0,0,0,0.9);
+          white-space:nowrap;pointer-events:none;
+        `;
+        container.appendChild(tag);
+        this.tagPool.push(tag);
+      }
+
+      tag.textContent = p.name; // Safe: textContent, no XSS
+      tag.style.left = `${sx}px`;
+      tag.style.top = `${sy}px`;
+      tag.style.display = '';
+      poolIdx++;
     });
   }
 }

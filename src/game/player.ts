@@ -76,7 +76,8 @@ export class Player {
   }
 
   /* ── Input bindings ────────────────────────────────────────── */
-  bindInput(canvas: HTMLCanvasElement): () => void {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  bindInput(_canvas: HTMLCanvasElement): () => void {
     const onKeyDown = (e: KeyboardEvent) => {
       switch (e.code) {
         case 'KeyW': this.forward  = true; break;

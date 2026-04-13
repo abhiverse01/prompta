@@ -12,6 +12,40 @@ const handle = app.getRequestHandler();
 
 const players = new Map();
 
+/** Strip everything except safe printable characters */
+function sanitizeName(str) {
+  if (typeof str !== 'string') return 'Wanderer';
+  return str.replace(/[^\w\s\-_.]/g, '').slice(0, 20).trim() || 'Wanderer';
+}
+
+/** Only allow hex colour codes */
+function sanitizeColor(str) {
+  if (typeof str !== 'string') return '#ff4444';
+  if (/^#[0-9a-fA-F]{6}$/.test(str)) return str;
+  return '#ff4444';
+}
+
+/** Strip HTML tags and limit length */
+function sanitizeText(str) {
+  if (typeof str !== 'string') return '';
+  return str.replace(/</g, '&lt;').replace(/>/g, '&gt;').slice(0, 200);
+}
+
+/** Rate limiter — max `maxCalls` calls per window per socket */
+function createRateLimiter(maxCalls, windowMs) {
+  const buckets = new Map();
+  return function check(socketId) {
+    const now = Date.now();
+    let entry = buckets.get(socketId);
+    if (!entry || now - entry.start > windowMs) {
+      entry = { start: now, count: 0 };
+      buckets.set(socketId, entry);
+    }
+    entry.count++;
+    return entry.count <= maxCalls;
+  };
+}
+
 app.prepare().then(() => {
   const expressApp = express();
   const httpServer = createServer(expressApp);
@@ -24,6 +58,10 @@ app.prepare().then(() => {
   io.on('connection', (socket) => {
     console.log(`[+] Player connected: ${socket.id}`);
 
+    // Per-socket rate limiters
+    const moveLimiter  = createRateLimiter(40, 1000);   // 40 moves/sec
+    const chatLimiter  = createRateLimiter(2, 2000);    // 2 msgs / 2 sec
+
     // Send the full world state to the newly connected player
     socket.emit(
       'world:state',
@@ -34,13 +72,15 @@ app.prepare().then(() => {
     socket.on('player:join', (data) => {
       const player = {
         id: socket.id,
-        name: data.name || 'Wanderer',
-        characterType: data.characterType || 0,
-        color: data.color || '#ff4444',
-        x: data.x ?? (Math.random() - 0.5) * 200,
-        y: data.y ?? 20,
-        z: data.z ?? (Math.random() - 0.5) * 200,
-        rotation: data.rotation || 0,
+        name: sanitizeName(data?.name),
+        characterType: typeof data?.characterType === 'number'
+          ? Math.max(0, Math.min(5, Math.round(data.characterType)))
+          : 0,
+        color: sanitizeColor(data?.color),
+        x: typeof data?.x === 'number' ? data.x : (Math.random() - 0.5) * 200,
+        y: typeof data?.y === 'number' ? data.y : 20,
+        z: typeof data?.z === 'number' ? data.z : (Math.random() - 0.5) * 200,
+        rotation: typeof data?.rotation === 'number' ? data.rotation : 0,
         animation: 'idle',
       };
       players.set(socket.id, player);
@@ -57,31 +97,36 @@ app.prepare().then(() => {
 
     // Position / rotation updates at ~20 Hz
     socket.on('player:move', (data) => {
+      if (!moveLimiter(socket.id)) return; // rate limited
       const player = players.get(socket.id);
       if (!player) return;
+      if (typeof data.x !== 'number' || typeof data.z !== 'number') return;
       player.x = data.x;
-      player.y = data.y;
+      player.y = typeof data.y === 'number' ? data.y : player.y;
       player.z = data.z;
-      player.rotation = data.rotation;
-      player.animation = data.animation || 'idle';
+      player.rotation = typeof data.rotation === 'number' ? data.rotation : player.rotation;
+      player.animation = typeof data.animation === 'string' ? data.animation : 'idle';
       socket.broadcast.emit('player:moved', {
         id: socket.id,
-        x: data.x,
-        y: data.y,
-        z: data.z,
-        rotation: data.rotation,
-        animation: data.animation,
+        x: player.x,
+        y: player.y,
+        z: player.z,
+        rotation: player.rotation,
+        animation: player.animation,
       });
     });
 
     // Chat messages
     socket.on('chat:message', (data) => {
+      if (!chatLimiter(socket.id)) return; // rate limited
       const player = players.get(socket.id);
       if (!player) return;
+      const text = sanitizeText(data?.text);
+      if (!text) return;
       const msg = {
         id: socket.id,
         name: player.name,
-        text: (data.text || '').slice(0, 200),
+        text,
         time: Date.now(),
       };
       io.emit('chat:message', msg);

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Terrain, sampleHeight } from './terrain';
+import { Terrain } from './terrain';
 import { Water } from './water';
 import { Atmosphere } from './atmosphere';
 import { Player } from './player';
@@ -29,6 +29,10 @@ export class GameEngine {
   private mp!: MultiplayerManager;
   private hud!: HUD;
 
+  /* Cached light references — avoid O(n) scene.children.find() per frame */
+  private dirLight!: THREE.DirectionalLight;
+  private ambientLight!: THREE.AmbientLight;
+
   private remoteMeshes = new Map<string, THREE.Group>();
   private disposeFns: (() => void)[] = [];
   private positionTimer = 0;
@@ -53,28 +57,26 @@ export class GameEngine {
     this.scene = new THREE.Scene();
     this.scene.fog = new THREE.Fog(0x60a5fa, 200, 900);
 
-    // Ambient + directional lights
-    const ambient = new THREE.AmbientLight(0xffffff, 0.4);
-    this.scene.add(ambient);
-    this.disposeFns.push(() => this.scene.remove(ambient));
+    // Ambient light (cached)
+    this.ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+    this.scene.add(this.ambientLight);
 
-    const dirLight = new THREE.DirectionalLight(0xfff5e0, 1.2);
-    dirLight.position.set(100, 150, 50);
-    dirLight.castShadow = true;
-    dirLight.shadow.mapSize.set(2048, 2048);
-    dirLight.shadow.camera.near = 1;
-    dirLight.shadow.camera.far = 400;
-    dirLight.shadow.camera.left = -80;
-    dirLight.shadow.camera.right = 80;
-    dirLight.shadow.camera.top = 80;
-    dirLight.shadow.camera.bottom = -80;
-    this.scene.add(dirLight);
-    this.disposeFns.push(() => this.scene.remove(dirLight));
+    // Directional light (cached)
+    this.dirLight = new THREE.DirectionalLight(0xfff5e0, 1.2);
+    this.dirLight.position.set(100, 150, 50);
+    this.dirLight.castShadow = true;
+    this.dirLight.shadow.mapSize.set(2048, 2048);
+    this.dirLight.shadow.camera.near = 1;
+    this.dirLight.shadow.camera.far = 400;
+    this.dirLight.shadow.camera.left = -80;
+    this.dirLight.shadow.camera.right = 80;
+    this.dirLight.shadow.camera.top = 80;
+    this.dirLight.shadow.camera.bottom = -80;
+    this.scene.add(this.dirLight);
 
     // Hemisphere light for natural ambient
     const hemiLight = new THREE.HemisphereLight(0x87ceeb, 0x556b2f, 0.3);
     this.scene.add(hemiLight);
-    this.disposeFns.push(() => this.scene.remove(hemiLight));
 
     // Systems
     this.terrain = new Terrain();
@@ -107,6 +109,7 @@ export class GameEngine {
 
     // Join the game after a short delay to ensure connection
     setTimeout(() => {
+      if (!this.alive) return;
       this.mp.join(
         playerName,
         character.id,
@@ -148,7 +151,6 @@ export class GameEngine {
       const id = data.id!;
       const mesh = this.remoteMeshes.get(id);
       if (mesh) {
-        // Smooth interpolation
         mesh.position.set(data.x ?? mesh.position.x, data.y ?? mesh.position.y, data.z ?? mesh.position.z);
         mesh.rotation.y = data.rotation ?? mesh.rotation.y;
       }
@@ -167,6 +169,7 @@ export class GameEngine {
       const mesh = this.remoteMeshes.get(data.id);
       if (mesh) {
         this.scene.remove(mesh);
+        this.disposeMeshGroup(mesh);
         this.remoteMeshes.delete(data.id);
       }
       this.mp.remotePlayers.delete(data.id);
@@ -181,6 +184,20 @@ export class GameEngine {
     this.mp.on('serverInfo', (info) => {
       this.hud.addServerMessage(info.message);
       this.hud.setPlayerCount(info.count);
+    });
+  }
+
+  /** Recursively dispose geometry and material in a Group */
+  private disposeMeshGroup(group: THREE.Group): void {
+    group.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.geometry.dispose();
+        if (child.material instanceof THREE.Material) {
+          child.material.dispose();
+        } else if (Array.isArray(child.material)) {
+          child.material.forEach(m => m.dispose());
+        }
+      }
     });
   }
 
@@ -235,33 +252,21 @@ export class GameEngine {
     // Update camera
     this.camera.update(dt, this.player);
 
-    // Update shadow camera to follow player
-    const dirLight = this.scene.children.find(
-      c => c instanceof THREE.DirectionalLight
-    ) as THREE.DirectionalLight | undefined;
-    if (dirLight) {
-      dirLight.position.set(
-        this.player.position.x + this.atmosphere.sunDirection.x * 100,
-        this.player.position.y + Math.max(this.atmosphere.sunDirection.y * 150, 30),
-        this.player.position.z + this.atmosphere.sunDirection.z * 100
-      );
-      dirLight.target.position.copy(this.player.position);
-      dirLight.target.updateMatrixWorld();
-    }
+    // Update shadow camera to follow player (uses cached light ref)
+    this.dirLight.position.set(
+      this.player.position.x + this.atmosphere.sunDirection.x * 100,
+      this.player.position.y + Math.max(this.atmosphere.sunDirection.y * 150, 30),
+      this.player.position.z + this.atmosphere.sunDirection.z * 100
+    );
+    this.dirLight.target.position.copy(this.player.position);
+    this.dirLight.target.updateMatrixWorld();
 
     // Update atmosphere
     this.atmosphere.update(dt);
 
-    // Update directional light to match sun
-    if (dirLight) {
-      dirLight.intensity = this.atmosphere.sunIntensity;
-    }
-    const ambientLight = this.scene.children.find(
-      c => c instanceof THREE.AmbientLight
-    ) as THREE.AmbientLight | undefined;
-    if (ambientLight) {
-      ambientLight.intensity = this.atmosphere.ambientIntensity;
-    }
+    // Update directional + ambient light intensities to match sun
+    this.dirLight.intensity = this.atmosphere.sunIntensity;
+    this.ambientLight.intensity = this.atmosphere.ambientIntensity;
 
     // Update fog
     (this.scene.fog as THREE.Fog).color.copy(this.atmosphere.fogColor);
@@ -292,10 +297,38 @@ export class GameEngine {
     this.renderer.render(this.scene, this.camera.camera);
   };
 
+  /** Full cleanup — dispose all GPU resources */
   dispose(): void {
     this.alive = false;
+
+    // Run all cleanup functions (event listeners, multiplayer disconnect)
     this.disposeFns.forEach(fn => fn());
-    this.remoteMeshes.forEach(mesh => this.scene.remove(mesh));
+    this.disposeFns = [];
+
+    // Dispose remote player meshes
+    this.remoteMeshes.forEach(mesh => {
+      this.scene.remove(mesh);
+      this.disposeMeshGroup(mesh);
+    });
+    this.remoteMeshes.clear();
+
+    // Dispose terrain
+    this.terrain.mesh.geometry.dispose();
+    (this.terrain.mesh.material as THREE.ShaderMaterial).dispose();
+
+    // Dispose water
+    this.water.mesh.geometry.dispose();
+    (this.water.mesh.material as THREE.ShaderMaterial).dispose();
+
+    // Dispose atmosphere sky dome
+    this.atmosphere.skyMesh.geometry.dispose();
+    (this.atmosphere.skyMesh.material as THREE.ShaderMaterial).dispose();
+
+    // Dispose local player mesh
+    this.disposeMeshGroup(this.player.group);
+    this.scene.remove(this.player.group);
+
+    // Dispose WebGL renderer (frees all GPU resources)
     this.renderer.dispose();
   }
 }

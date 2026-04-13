@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { noise, Noise } from './noise';
+import { Noise } from './noise';
 import { sampleHeight, WATER_LEVEL } from './terrain';
 
 interface WorldObject {
