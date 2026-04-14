@@ -1,57 +1,85 @@
 /* ═══════════════════════════════════════════════════════════════════
-   GLOBAL RESET & BASE
+   OPEN WORLD 3D — COMPLETE CSS
+   No Tailwind dependency. All styles are explicit and self-contained.
    ═══════════════════════════════════════════════════════════════════ */
 
-@import "tailwindcss";
+/* ── RESET ─────────────────────────────────────────────────────────── */
 
-:root {
-  --bg: #07070c;
-  --fg: #e4e4e8;
-}
-
-* {
+*, *::before, *::after {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
 }
 
-html, body {
-  width: 100%;
-  height: 100%;
+html {
+  width: 100vw;
+  height: 100dvh;
   overflow: hidden;
-  background: var(--bg);
-  color: var(--fg);
-  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  -webkit-text-size-adjust: 100%;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  width: 100vw;
+  height: 100dvh;
+  overflow: hidden;
+  background: #07070c;
+  color: #e4e4e8;
+  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  line-height: 1.5;
+}
+
+/* Prevent any browser-default outline on interactive elements */
+button, input, textarea {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  color: inherit;
+  border: none;
+  outline: none;
+  background: none;
+}
+
+button {
+  cursor: pointer;
+}
+
+img, svg, video, canvas {
+  display: block;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
    GAME WRAPPER (playing phase)
 
-   CRITICAL: Do NOT set width/height on .game-canvas.
-   Three.js renderer.setSize() manages BOTH the drawing buffer
-   AND CSS dimensions via inline styles. Any CSS width/height
-   will fight Three.js and cause flicker / context issues.
+   CRITICAL: .game-canvas has NO width/height CSS.
+   Three.js renderer.setSize() manages both drawing buffer AND
+   inline CSS dimensions. Any CSS override will cause flicker.
    ═══════════════════════════════════════════════════════════════════ */
 
 .game-wrapper {
-  position: fixed;
-  inset: 0;
-  overflow: hidden;
-  background: #000;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  overflow: hidden !important;
+  background: #000 !important;
+  z-index: 1 !important;
 }
 
-/* Canvas: display block only. No width, no height. Let Three.js own it. */
 .game-canvas {
   display: block;
 }
 
 .game-hud-layer {
-  position: fixed;
-  inset: 0;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100dvh !important;
   pointer-events: none;
-  z-index: 10;
+  z-index: 10 !important;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -59,23 +87,28 @@ html, body {
    ═══════════════════════════════════════════════════════════════════ */
 
 .cs-root {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 32px 16px;
-  background: #07070c;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  padding: 32px 16px !important;
+  background: #07070c !important;
+  z-index: 1 !important;
 }
 
 /* Animated gradient background */
 .cs-bg {
-  position: fixed;
-  inset: -50%;
-  width: 200%;
-  height: 200%;
+  position: fixed !important;
+  top: -50% !important;
+  left: -50% !important;
+  width: 200% !important;
+  height: 200% !important;
   background:
     radial-gradient(ellipse at 20% 50%, rgba(30, 60, 120, 0.25) 0%, transparent 50%),
     radial-gradient(ellipse at 80% 20%, rgba(80, 20, 100, 0.20) 0%, transparent 50%),
@@ -84,6 +117,7 @@ html, body {
   animation: csBgDrift 25s ease-in-out infinite alternate;
   will-change: transform;
   pointer-events: none;
+  z-index: 0;
 }
 
 @keyframes csBgDrift {
@@ -94,10 +128,14 @@ html, body {
 
 /* Vignette overlay */
 .cs-vignette {
-  position: fixed;
-  inset: 0;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
   background: radial-gradient(ellipse at center, transparent 30%, rgba(5, 5, 15, 0.7) 100%);
   pointer-events: none;
+  z-index: 0;
 }
 
 /* Center container */
@@ -174,10 +212,10 @@ html, body {
   text-align: left;
   overflow: hidden;
   color: #fff;
-  outline: none;
   font-family: inherit;
   font-size: inherit;
   -webkit-tap-highlight-color: transparent;
+  width: 100%;
 }
 
 .cs-card::before {
@@ -290,6 +328,7 @@ html, body {
   display: flex;
   gap: 12px;
   align-items: stretch;
+  width: 100%;
 }
 
 @media (max-width: 500px) {
@@ -307,6 +346,8 @@ html, body {
   font-family: inherit;
   outline: none;
   transition: all 0.25s ease;
+  width: 100%;
+  min-width: 0;
 }
 
 .cs-input:focus {
@@ -362,21 +403,28 @@ html, body {
    ═══════════════════════════════════════════════════════════════════ */
 
 .ld-root {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-  background: var(--bg);
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  z-index: 100 !important;
+  background: #07070c !important;
 }
 
 .ld-glow {
-  position: absolute;
-  inset: 0;
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
   background: radial-gradient(ellipse at center, var(--ld-color, #c74beb) 0%, transparent 65%);
   opacity: 0.10;
   animation: ldGlowPulse 2s ease-in-out infinite alternate;
+  pointer-events: none;
 }
 
 @keyframes ldGlowPulse {
@@ -457,13 +505,16 @@ html, body {
    ═══════════════════════════════════════════════════════════════════ */
 
 .err-root {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 200;
-  background: var(--bg);
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  z-index: 200 !important;
+  background: #07070c !important;
 }
 
 .err-content {

@@ -54,21 +54,11 @@ export class GameEngine {
     this.canvas = canvas;
 
     // ── Determine canvas size ──────────────────────────────────────
-    // Try getBoundingClientRect first (works after layout).
-    // Fall back to window dimensions (works even if canvas has no CSS size).
-    const rect = canvas.getBoundingClientRect();
-    let w = rect.width;
-    let h = rect.height;
-
-    // If rect is 0x0 (canvas not yet laid out), use window size
-    if (w < 1 || h < 1) {
-      w = window.innerWidth;
-      h = window.innerHeight;
-      console.warn('[Engine] Canvas rect was 0x0, using window dimensions:', w, 'x', h);
-    }
-
-    w = Math.floor(w);
-    h = Math.floor(h);
+    // ALWAYS use window dimensions. getBoundingClientRect() can return
+    // wrong values in iframes/embedded contexts. window dimensions
+    // are always the true viewport size for a fullscreen game.
+    const w = window.innerWidth;
+    const h = window.innerHeight;
     console.log('[Engine] Creating WebGL renderer with size:', w, 'x', h);
 
     // ── WebGL Context Loss / Restore handlers ──────────────────────
@@ -213,9 +203,6 @@ export class GameEngine {
         if (!this.alive) return;
         const rw = window.innerWidth;
         const rh = window.innerHeight;
-        const oldW = this.renderer.domElement.clientWidth;
-        const oldH = this.renderer.domElement.clientHeight;
-        if (rw === oldW && rh === oldH) return;
         this.renderer.setSize(rw, rh);
         this.camera.camera.aspect = rw / rh;
         this.camera.camera.updateProjectionMatrix();

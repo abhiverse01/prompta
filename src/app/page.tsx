@@ -33,41 +33,23 @@ export default function GamePage() {
   // Create engine when phase becomes 'playing'
   useEffect(() => {
     if (phase !== 'playing') return;
-
-    // Don't re-create if we already have a running engine for this phase
     if (enginePhaseRef.current === 'playing' && engineRef.current) return;
 
     const canvas = canvasRef.current;
     const hud = hudRef.current;
-    if (!canvas || !hud || !selectedChar) {
-      console.warn('[Page] Missing refs, cannot create engine:', {
-        canvas: !!canvas,
-        hud: !!hud,
-        selectedChar: !!selectedChar,
-      });
-      return;
-    }
+    if (!canvas || !hud || !selectedChar) return;
 
-    // Dispose any previous engine
     if (engineRef.current) {
       engineRef.current.dispose();
       engineRef.current = null;
       enginePhaseRef.current = null;
     }
 
-    // Use requestAnimationFrame to ensure the canvas has been laid out
-    // by the browser before we read its dimensions and create WebGL.
-    // A single frame is enough — we do NOT need multiple frames.
     let cancelled = false;
     const raf = requestAnimationFrame(() => {
-      if (cancelled) return;
-      if (!canvas.isConnected) {
-        console.warn('[Page] Canvas was unmounted during rAF wait');
-        return;
-      }
+      if (cancelled || !canvas.isConnected) return;
 
       try {
-        console.log('[Page] Creating game engine...');
         engineRef.current = new GameEngine(
           canvas,
           {
@@ -80,7 +62,6 @@ export default function GamePage() {
           hud,
         );
         enginePhaseRef.current = 'playing';
-        console.log('[Page] Game engine created successfully');
       } catch (err) {
         console.error('[Page] Failed to create game engine:', err);
         engineRef.current = null;
@@ -100,14 +81,11 @@ export default function GamePage() {
   const handleEnter = useCallback(() => {
     if (!selectedChar) return;
     setErrorMsg('');
-
-    // Dispose any existing engine before transitioning
     if (engineRef.current) {
       engineRef.current.dispose();
       engineRef.current = null;
       enginePhaseRef.current = null;
     }
-
     setPhase('loading');
     loadingTimerRef.current = setTimeout(() => {
       loadingTimerRef.current = null;
