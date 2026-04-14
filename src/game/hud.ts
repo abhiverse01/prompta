@@ -304,6 +304,11 @@ export class HUD {
     ctx.restore();
   }
 
+  /** Check if the HUD container is still in the DOM (survives React unmount) */
+  isAttached(): boolean {
+    return this.container.isConnected;
+  }
+
   /** Reusable vector for name tag projection */
   private _namePos = new THREE.Vector3();
 

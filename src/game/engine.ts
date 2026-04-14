@@ -42,6 +42,8 @@ export class GameEngine {
   private joinTimeout: ReturnType<typeof setTimeout> | null = null;
   private frameCount = 0;
   private lastErrorFrame = -100;
+  private resizeRAF = 0;
+  private canvas: HTMLCanvasElement;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -49,6 +51,15 @@ export class GameEngine {
     playerName: string,
     hudContainer: HTMLElement
   ) {
+    this.canvas = canvas;
+
+    // ── SAFETY: Ensure canvas has valid dimensions before creating WebGL ──
+    // The browser may not have laid out the canvas yet if called too early.
+    // Force a layout read so clientWidth/clientHeight are available.
+    const rect = canvas.getBoundingClientRect();
+    const w = rect.width > 0 ? Math.floor(rect.width) : window.innerWidth;
+    const h = rect.height > 0 ? Math.floor(rect.height) : window.innerHeight;
+
     // ── WebGL Context Loss / Restore handlers ─────────────────────
     const onContextLost = (e: Event) => {
       e.preventDefault();
@@ -57,20 +68,24 @@ export class GameEngine {
     };
     const onContextRestored = () => {
       console.log('[Engine] WebGL context restored — resuming');
-      this.contextLost = false;
-      // Reset the clock so getDelta() doesn't return a huge value
-      // which would cause a physics explosion
-      this.clock.start();
-      this.clock.elapsedTime = 0;
-      // Re-apply renderer state after context restore
-      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-      this.renderer.setSize(window.innerWidth, window.innerHeight);
-      this.renderer.shadowMap.enabled = true;
-      this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-      this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      this.renderer.toneMappingExposure = 1.1;
-      // Force all materials to recompile shaders
-      this.renderer.compile(this.scene, this.camera.camera);
+      try {
+        this.contextLost = false;
+        this.clock.start();
+        this.clock.elapsedTime = 0;
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.renderer.toneMappingExposure = 1.1;
+        this.renderer.compile(this.scene, this.camera.camera);
+        console.log('[Engine] Context restore complete — shaders recompiled');
+      } catch (restoreErr) {
+        console.error('[Engine] Failed to restore WebGL context:', restoreErr);
+        // Mark as still lost so the loop keeps skipping render calls
+        // rather than crashing every frame
+        this.contextLost = true;
+      }
     };
     canvas.addEventListener('webglcontextlost', onContextLost);
     canvas.addEventListener('webglcontextrestored', onContextRestored);
@@ -84,13 +99,24 @@ export class GameEngine {
       canvas,
       antialias: true,
       powerPreference: 'high-performance',
+      // Fail gracefully if WebGL is not available
+      failIfMajorPerformanceCaveat: false,
     });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    // Let Three.js manage BOTH the drawing buffer and CSS dimensions.
+    // Do NOT set CSS width/height on the canvas in globals.css —
+    // Three.js sets inline styles here, and any CSS override causes flicker.
+    this.renderer.setSize(w, h);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.1;
+
+    // Verify the renderer actually created a valid context
+    const gl = this.renderer.getContext();
+    if (!gl || gl.isContextLost()) {
+      throw new Error('WebGL context is not available or was lost immediately');
+    }
 
     // ── Scene ────────────────────────────────────────────────────
     this.scene = new THREE.Scene();
@@ -163,16 +189,27 @@ export class GameEngine {
     // Chat binding
     this.disposeFns.push(this.hud.bindChat(this.mp, this.player));
 
-    // ── Resize handler (updates renderer + camera together) ───────
+    // ── Resize handler (debounced via rAF) ──────────────────────
     const onResize = () => {
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      this.renderer.setSize(w, h);
-      this.camera.camera.aspect = w / h;
-      this.camera.camera.updateProjectionMatrix();
+      cancelAnimationFrame(this.resizeRAF);
+      this.resizeRAF = requestAnimationFrame(() => {
+        if (!this.alive) return;
+        const rw = window.innerWidth;
+        const rh = window.innerHeight;
+        // Only resize if dimensions actually changed
+        const oldW = this.renderer.domElement.clientWidth;
+        const oldH = this.renderer.domElement.clientHeight;
+        if (rw === oldW && rh === oldH) return;
+        this.renderer.setSize(rw, rh);
+        this.camera.camera.aspect = rw / rh;
+        this.camera.camera.updateProjectionMatrix();
+      });
     };
     window.addEventListener('resize', onResize);
-    this.disposeFns.push(() => window.removeEventListener('resize', onResize));
+    this.disposeFns.push(() => {
+      window.removeEventListener('resize', onResize);
+      cancelAnimationFrame(this.resizeRAF);
+    });
 
     // ── Start render loop ────────────────────────────────────────
     this.loop();
@@ -281,12 +318,13 @@ export class GameEngine {
   private loop = (): void => {
     if (!this.alive) return;
 
-    // Skip rendering if WebGL context is lost
+    // Skip rendering if WebGL context is lost — keep the loop alive
     if (this.contextLost) {
       requestAnimationFrame(this.loop);
       return;
     }
 
+    // Schedule next frame FIRST so the loop never dies due to an error
     requestAnimationFrame(this.loop);
     this.frameCount++;
 
@@ -295,6 +333,7 @@ export class GameEngine {
       // or WebGL context restore where clock.getDelta() can return seconds)
       let dt = this.clock.getDelta();
       if (dt > 0.1) dt = 1 / 60; // snap to 60fps equivalent
+      if (dt <= 0) dt = 1 / 60; // guard against zero/negative dt
 
       const elapsed = this.clock.elapsedTime;
 
@@ -346,19 +385,23 @@ export class GameEngine {
       this.positionTimer += dt;
       if (this.positionTimer >= 0.05) {
         this.positionTimer = 0;
-        this.mp.sendPosition(
-          this.player.position.x,
-          this.player.position.y,
-          this.player.position.z,
-          this.player.rotation,
-          this.player.animation
-        );
+        if (this.mp.connected) {
+          this.mp.sendPosition(
+            this.player.position.x,
+            this.player.position.y,
+            this.player.position.z,
+            this.player.rotation,
+            this.player.animation
+          );
+        }
       }
 
-      // ── HUD ─────────────────────────────────────────────────────
-      this.hud.updatePosition(this.player.position.x, this.player.position.z);
-      this.hud.drawMinimap(this.mp.remotePlayers, this.camera.yaw);
-      this.hud.drawNameTags(this.camera.camera, this.mp.remotePlayers);
+      // ── HUD (skip if container is no longer in the DOM) ─────────
+      if (this.hud.isAttached()) {
+        this.hud.updatePosition(this.player.position.x, this.player.position.z);
+        this.hud.drawMinimap(this.mp.remotePlayers, this.camera.yaw);
+        this.hud.drawNameTags(this.camera.camera, this.mp.remotePlayers);
+      }
 
       // ── Render ──────────────────────────────────────────────────
       this.renderer.render(this.scene, this.camera.camera);
@@ -367,7 +410,7 @@ export class GameEngine {
       // Log errors but throttle to once per 60 frames (1 second at 60fps)
       // to avoid console spam while keeping the loop alive
       if (this.frameCount - this.lastErrorFrame > 60) {
-        console.error('[Engine] Render frame error:', err);
+        console.error('[Engine] Render frame error (loop continues):', err);
         this.lastErrorFrame = this.frameCount;
       }
     }
@@ -380,6 +423,8 @@ export class GameEngine {
       clearTimeout(this.joinTimeout);
       this.joinTimeout = null;
     }
+
+    cancelAnimationFrame(this.resizeRAF);
 
     this.disposeFns.forEach(fn => {
       try { fn(); } catch { /* best-effort */ }

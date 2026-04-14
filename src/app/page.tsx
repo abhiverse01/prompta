@@ -12,6 +12,7 @@ export default function GamePage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const hudRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<GameEngine | null>(null);
+  const loadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Track which phase we actually created an engine for, to avoid
   // re-creating on HMR when phase hasn't changed.
   const enginePhaseRef = useRef<string | null>(null);
@@ -24,10 +25,14 @@ export default function GamePage() {
         engineRef.current = null;
         enginePhaseRef.current = null;
       }
+      if (loadingTimerRef.current !== null) {
+        clearTimeout(loadingTimerRef.current);
+        loadingTimerRef.current = null;
+      }
     };
   }, []);
 
-  // Create engine immediately when phase becomes 'playing'
+  // Create engine when phase becomes 'playing'
   useEffect(() => {
     if (phase !== 'playing') return;
 
@@ -42,44 +47,67 @@ export default function GamePage() {
     if (engineRef.current) {
       engineRef.current.dispose();
       engineRef.current = null;
+      enginePhaseRef.current = null;
     }
 
-    try {
-      engineRef.current = new GameEngine(
-        canvas,
-        {
-          id: selectedChar.id,
-          name: selectedChar.name,
-          color: selectedChar.color,
-          accent: selectedChar.accent,
-        },
-        playerName || selectedChar.name,
-        hud,
-      );
-      enginePhaseRef.current = 'playing';
-    } catch (err) {
-      console.error('[Page] Failed to create game engine:', err);
-      engineRef.current = null;
-      enginePhaseRef.current = null;
-      // Schedule error state update outside the synchronous effect body
-      // to satisfy React's set-state-in-effect rule
-      const msg = err instanceof Error ? err.message : 'Failed to start the game engine';
-      queueMicrotask(() => {
+    // Wait for the next animation frame so the browser has finished
+    // layout and the canvas has valid clientWidth/clientHeight.
+    // Without this delay, canvas.getBoundingClientRect() can return 0x0
+    // on some browsers, causing Three.js to create a 0x0 WebGL context.
+    const raf = requestAnimationFrame(() => {
+      if (!canvas.isConnected) return; // canvas was unmounted during the frame wait
+
+      try {
+        engineRef.current = new GameEngine(
+          canvas,
+          {
+            id: selectedChar.id,
+            name: selectedChar.name,
+            color: selectedChar.color,
+            accent: selectedChar.accent,
+          },
+          playerName || selectedChar.name,
+          hud,
+        );
+        enginePhaseRef.current = 'playing';
+        console.log('[Page] Game engine created successfully');
+      } catch (err) {
+        console.error('[Page] Failed to create game engine:', err);
+        engineRef.current = null;
+        enginePhaseRef.current = null;
+        const msg = err instanceof Error ? err.message : 'Failed to start the game engine';
         setErrorMsg(msg);
         setPhase('error');
-      });
-    }
+      }
+    });
+
+    return () => cancelAnimationFrame(raf);
   }, [phase, selectedChar, playerName]);
 
   const handleEnter = useCallback(() => {
     if (!selectedChar) return;
     setErrorMsg('');
+
+    // Dispose any existing engine before transitioning
+    if (engineRef.current) {
+      engineRef.current.dispose();
+      engineRef.current = null;
+      enginePhaseRef.current = null;
+    }
+
     setPhase('loading');
-    setTimeout(() => setPhase('playing'), 1800);
+    loadingTimerRef.current = setTimeout(() => {
+      loadingTimerRef.current = null;
+      setPhase('playing');
+    }, 1800);
   }, [selectedChar]);
 
   const handleRetry = useCallback(() => {
     setErrorMsg('');
+    if (loadingTimerRef.current !== null) {
+      clearTimeout(loadingTimerRef.current);
+      loadingTimerRef.current = null;
+    }
     if (engineRef.current) {
       engineRef.current.dispose();
       engineRef.current = null;

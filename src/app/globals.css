@@ -1,3 +1,9 @@
+/* ═══════════════════════════════════════════════════════════════════
+   GLOBAL RESET & BASE
+   ═══════════════════════════════════════════════════════════════════ */
+
+@import "tailwindcss";
+
 :root {
   --bg: #07070c;
   --fg: #e4e4e8;
@@ -20,14 +26,13 @@ html, body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* IMPORTANT: Tailwind @import goes AFTER our critical game styles.
-   Tailwind's Preflight reset (display:block on everything) can override
-   .game-canvas display during HMR, causing the 3D canvas to flicker.
-   Placing it after ensures our game styles win the cascade. */
-@import "tailwindcss";
-
 /* ═══════════════════════════════════════════════════════════════════
    GAME WRAPPER (playing phase)
+
+   CRITICAL: Do NOT set width/height on .game-canvas.
+   Three.js renderer.setSize() manages BOTH the drawing buffer
+   AND CSS dimensions via inline styles. Any CSS width/height
+   will fight Three.js and cause flicker / context issues.
    ═══════════════════════════════════════════════════════════════════ */
 
 .game-wrapper {
@@ -37,13 +42,9 @@ html, body {
   background: #000;
 }
 
-/* Canvas: NO width/height CSS — Three.js renderer.setSize() manages
-   both the drawing buffer AND CSS dimensions via inline styles.
-   Any CSS width/height here would fight Three.js and cause flicker. */
+/* Canvas: display block only. No width, no height. Let Three.js own it. */
 .game-canvas {
-  display: block !important;
-  width: 100% !important;
-  height: 100% !important;
+  display: block;
 }
 
 .game-hud-layer {
