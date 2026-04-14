@@ -10,7 +10,7 @@ export interface RemotePlayer {
   z: number;
   rotation: number;
   animation: string;
-  mesh?: import('three').Group; // filled at runtime
+  mesh?: import('three').Group;
 }
 
 export interface ChatMessage {
@@ -42,6 +42,10 @@ export class MultiplayerManager {
   connect(): void {
     this.socket = io({
       transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
     });
 
     this.socket.on('connect', () => {
@@ -81,22 +85,33 @@ export class MultiplayerManager {
       this.callbacks.serverInfo.forEach(cb => cb(info));
     });
 
-    this.socket.on('disconnect', () => {
-      console.log('[Multiplayer] Disconnected');
+    this.socket.on('disconnect', (reason) => {
+      console.log('[Multiplayer] Disconnected:', reason);
+      this.connected = false;
+    });
+
+    this.socket.on('connect_error', (err) => {
+      console.warn('[Multiplayer] Connection error:', err.message);
       this.connected = false;
     });
   }
 
   join(name: string, characterType: number, color: string, x: number, y: number, z: number): void {
-    this.socket?.emit('player:join', { name, characterType, color, x, y, z });
+    if (this.socket?.connected) {
+      this.socket.emit('player:join', { name, characterType, color, x, y, z });
+    }
   }
 
   sendPosition(x: number, y: number, z: number, rotation: number, animation: string): void {
-    this.socket?.emit('player:move', { x, y, z, rotation, animation });
+    if (this.socket?.connected) {
+      this.socket.emit('player:move', { x, y, z, rotation, animation });
+    }
   }
 
   sendChat(text: string): void {
-    this.socket?.emit('chat:message', { text });
+    if (this.socket?.connected) {
+      this.socket.emit('chat:message', { text });
+    }
   }
 
   on<K extends keyof typeof this.callbacks>(
@@ -107,6 +122,11 @@ export class MultiplayerManager {
   }
 
   disconnect(): void {
-    this.socket?.disconnect();
+    if (this.socket) {
+      this.socket.removeAllListeners();
+      this.socket.disconnect();
+      this.socket = null;
+    }
+    this.connected = false;
   }
 }

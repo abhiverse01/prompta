@@ -1,10 +1,7 @@
 import * as THREE from 'three';
 import { MultiplayerManager, RemotePlayer } from './multiplayer';
+import { Player } from './player';
 
-/**
- * HUD – manages HTML overlays: health bar, minimap canvas, chat panel,
- * player count, coordinates, crosshair, and floating name tags.
- */
 export class HUD {
   private container: HTMLElement;
   private minimapCanvas: HTMLCanvasElement;
@@ -16,17 +13,17 @@ export class HUD {
   private nameTagContainer: HTMLElement;
   private chatVisible = false;
 
-  /* world position of the local player (updated every frame) */
   private px = 0;
   private pz = 0;
-
-  /* Pooled name tag elements to avoid per-frame DOM creation */
   private tagPool: HTMLDivElement[] = [];
+
+  /** Cached minimap gradient — reused every frame instead of re-created */
+  private minimapGradient: CanvasGradient | null = null;
+  private minimapGradientKey = '';
 
   constructor(container: HTMLElement) {
     this.container = container;
     container.innerHTML = `
-      <!-- Crosshair -->
       <div id="hud-crosshair" style="
         position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
         pointer-events:none;z-index:20;
@@ -38,7 +35,6 @@ export class HUD {
         <line x1="15" y1="12" x2="20" y2="12" stroke="rgba(255,255,255,0.5)" stroke-width="1"/>
       </svg></div>
 
-      <!-- Health / Stamina bar -->
       <div id="hud-bars" style="position:fixed;top:20px;left:20px;z-index:20;pointer-events:none;">
         <div style="font-size:12px;color:#ccc;margin-bottom:4px;font-family:monospace;">HP</div>
         <div style="width:200px;height:14px;background:rgba(0,0,0,0.5);border-radius:7px;overflow:hidden;border:1px solid rgba(255,255,255,0.15);">
@@ -50,18 +46,15 @@ export class HUD {
         </div>
       </div>
 
-      <!-- Player count -->
       <div id="hud-count" style="position:fixed;top:20px;right:20px;z-index:20;pointer-events:none;
         background:rgba(0,0,0,0.45);padding:6px 14px;border-radius:8px;
         font-family:monospace;font-size:13px;color:#ddd;border:1px solid rgba(255,255,255,0.1);">
-        🌍 <span id="online-count">1</span> online
+        <span id="online-count">1</span> online
       </div>
 
-      <!-- Coordinates -->
       <div id="hud-coords" style="position:fixed;top:54px;right:20px;z-index:20;pointer-events:none;
-        font-family:monospace;font-size:11px;color:rgba(255,255,255,0.5);">X: 0 &nbsp; Z: 0</div>
+        font-family:monospace;font-size:11px;color:rgba(255,255,255,0.5);">X: 0   Z: 0</div>
 
-      <!-- Minimap -->
       <div style="position:fixed;bottom:20px;right:20px;z-index:20;pointer-events:none;">
         <canvas id="hud-minimap" width="160" height="160" style="
           width:160px;height:160px;border-radius:50%;
@@ -70,7 +63,6 @@ export class HUD {
         "></canvas>
       </div>
 
-      <!-- Chat — pointer-events:auto so the input and log are clickable -->
       <div id="hud-chat" style="position:fixed;bottom:20px;left:20px;z-index:20;width:340px;pointer-events:auto;">
         <div id="chat-log" style="
           max-height:180px;overflow-y:auto;padding:8px;
@@ -84,20 +76,18 @@ export class HUD {
             background:rgba(0,0,0,0.55);border:1px solid rgba(255,255,255,0.15);
             border-top:none;border-radius:0 0 8px 8px;
             color:#eee;font-family:monospace;font-size:13px;outline:none;
+            box-sizing:border-box;
           "/>
       </div>
 
-      <!-- Controls hint -->
       <div style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:20;
         pointer-events:none;font-family:monospace;font-size:11px;color:rgba(255,255,255,0.3);">
-        WASD move · Shift sprint · Space jump · T chat · Click to capture mouse
+        WASD move &middot; Shift sprint &middot; Space jump &middot; T chat &middot; Click to capture mouse
       </div>
 
-      <!-- Name tag container -->
-      <div id="name-tags" style="position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:15;"></div>
+      <div id="name-tags" style="position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:15;overflow:hidden;"></div>
     `;
 
-    // Safe query selectors with fallbacks
     const minimapEl = container.querySelector('#hud-minimap');
     if (!minimapEl) throw new Error('HUD: minimap canvas not found');
     this.minimapCanvas = minimapEl as HTMLCanvasElement;
@@ -126,33 +116,50 @@ export class HUD {
     this.nameTagContainer = nameTagEl as HTMLElement;
   }
 
-  /** Bind chat toggle key and input submission */
-  bindChat(mp: MultiplayerManager): () => void {
+  /** Bind chat toggle — links chat state to player.inputBlocked to prevent key leaks */
+  bindChat(mp: MultiplayerManager, player: Player): () => void {
     const onKeyDown = (e: KeyboardEvent) => {
+      // Open chat with T
       if (e.code === 'KeyT' && !this.chatVisible) {
         e.preventDefault();
+        e.stopPropagation(); // prevent game from seeing T
         this.chatVisible = true;
+        player.inputBlocked = true;
+        player.clearInput(); // release any held movement keys
         this.chatInput.style.display = 'block';
         this.chatInput.focus();
+        return;
       }
+
+      // Close chat with Escape — stopPropagation so pointer lock doesn't also release
       if (e.code === 'Escape' && this.chatVisible) {
+        e.preventDefault();
+        e.stopPropagation();
         this.closeChat();
+        player.inputBlocked = false;
+        return;
       }
     };
     const onSubmit = (e: KeyboardEvent) => {
       if (e.key === 'Enter' && this.chatVisible) {
+        e.stopPropagation(); // prevent game from seeing Enter
         const text = this.chatInput.value.trim();
         if (text) {
           mp.sendChat(text);
           this.chatInput.value = '';
         }
         this.closeChat();
+        player.inputBlocked = false;
+      }
+      // Block all other keys from reaching the game while chat is open
+      if (this.chatVisible) {
+        e.stopPropagation();
       }
     };
-    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keydown', onKeyDown, true); // capture phase to intercept before game
     this.chatInput.addEventListener('keydown', onSubmit);
     return () => {
-      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keydown', onKeyDown, true);
       this.chatInput.removeEventListener('keydown', onSubmit);
     };
   }
@@ -163,30 +170,25 @@ export class HUD {
     this.chatInput.blur();
   }
 
-  /** Add a chat message to the log (XSS-safe: uses textContent for user data) */
   addMessage(msg: { name: string; text: string; time: number }): void {
     const el = document.createElement('div');
     el.style.marginBottom = '3px';
 
     const timeSpan = document.createElement('span');
     timeSpan.style.color = 'rgba(255,255,255,0.35)';
-    const time = new Date(msg.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    timeSpan.textContent = time;
+    timeSpan.textContent = new Date(msg.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     const nameB = document.createElement('b');
     nameB.style.color = '#fbbf24';
     nameB.textContent = msg.name;
 
-    const textNode = document.createTextNode(`: ${msg.text}`);
-
     el.appendChild(timeSpan);
     el.appendChild(document.createTextNode(' '));
     el.appendChild(nameB);
-    el.appendChild(textNode);
+    el.appendChild(document.createTextNode(`: ${msg.text}`));
     this.chatLog.appendChild(el);
     this.chatLog.scrollTop = this.chatLog.scrollHeight;
 
-    // Limit visible messages
     while (this.chatLog.children.length > 30) {
       this.chatLog.removeChild(this.chatLog.firstChild!);
     }
@@ -204,14 +206,12 @@ export class HUD {
     this.playerCountEl.textContent = String(n);
   }
 
-  /** Called every frame with the local player's world position */
   updatePosition(x: number, z: number): void {
     this.px = x;
     this.pz = z;
     this.coordsEl.textContent = `X: ${Math.round(x)}   Z: ${Math.round(z)}`;
   }
 
-  /** Update the minimap canvas */
   drawMinimap(
     remotePlayers: Map<string, RemotePlayer>,
     cameraYaw: number
@@ -223,20 +223,30 @@ export class HUD {
     const cx = w / 2;
     const cy = h / 2;
 
-    // Background
     ctx.clearRect(0, 0, w, h);
+
+    // Background circle
     ctx.fillStyle = 'rgba(10,20,10,0.7)';
     ctx.beginPath();
     ctx.arc(cx, cy, cx, 0, Math.PI * 2);
     ctx.fill();
 
-    // Terrain hint circles
-    const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, cx);
-    gradient.addColorStop(0, 'rgba(30,80,30,0.3)');
-    gradient.addColorStop(0.5, 'rgba(40,70,30,0.2)');
-    gradient.addColorStop(1, 'rgba(20,40,50,0.3)');
-    ctx.fillStyle = gradient;
+    // Reuse gradient if canvas size hasn't changed
+    const gKey = `${w}_${h}`;
+    if (!this.minimapGradient || this.minimapGradientKey !== gKey) {
+      this.minimapGradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, cx);
+      this.minimapGradient.addColorStop(0, 'rgba(30,80,30,0.3)');
+      this.minimapGradient.addColorStop(0.5, 'rgba(40,70,30,0.2)');
+      this.minimapGradient.addColorStop(1, 'rgba(20,40,50,0.3)');
+      this.minimapGradientKey = gKey;
+    }
+    ctx.fillStyle = this.minimapGradient;
     ctx.fill();
+
+    // Precompute cos/sin once
+    const cosY = Math.cos(-cameraYaw);
+    const sinY = Math.sin(-cameraYaw);
+    const scale = 0.2;
 
     // North indicator
     ctx.save();
@@ -251,15 +261,12 @@ export class HUD {
     ctx.fill();
     ctx.restore();
 
-    // Scale: 1 pixel = 5 world units
-    const scale = 0.2;
-
     // Remote players
     remotePlayers.forEach((p) => {
       const dx = (p.x - this.px) * scale;
       const dz = -(p.z - this.pz) * scale;
-      const rx = cx + dx * Math.cos(-cameraYaw) - dz * Math.sin(-cameraYaw);
-      const ry = cy + dx * Math.sin(-cameraYaw) + dz * Math.cos(-cameraYaw);
+      const rx = cx + dx * cosY - dz * sinY;
+      const ry = cy + dx * sinY + dz * cosY;
       if (Math.hypot(rx - cx, ry - cy) < cx - 4) {
         ctx.fillStyle = p.color || '#fff';
         ctx.beginPath();
@@ -268,7 +275,7 @@ export class HUD {
       }
     });
 
-    // Self indicator
+    // Self
     ctx.fillStyle = '#fff';
     ctx.beginPath();
     ctx.arc(cx, cy, 4, 0, Math.PI * 2);
@@ -291,7 +298,9 @@ export class HUD {
     ctx.restore();
   }
 
-  /** Project 3D positions to 2D screen and draw name tags (pooled, no innerHTML thrashing) */
+  /** Reusable vector for name tag projection */
+  private _namePos = new THREE.Vector3();
+
   drawNameTags(
     camera: THREE.PerspectiveCamera,
     remotePlayers: Map<string, RemotePlayer>
@@ -300,44 +309,36 @@ export class HUD {
     const w = window.innerWidth;
     const h = window.innerHeight;
 
-    // Hide all existing tags first
     for (const tag of this.tagPool) {
       tag.style.display = 'none';
     }
 
     let poolIdx = 0;
+    const pos = this._namePos;
 
     remotePlayers.forEach((p) => {
       if (!p.mesh) return;
-      const pos = new THREE.Vector3(p.x, p.y + 3.5, p.z);
+      pos.set(p.x, p.y + 3.5, p.z);
       pos.project(camera);
 
-      // Check if in front of camera
       if (pos.z > 1) return;
 
       const sx = (pos.x * 0.5 + 0.5) * w;
       const sy = (-pos.y * 0.5 + 0.5) * h;
 
-      // Check if on screen
       if (sx < -100 || sx > w + 100 || sy < -50 || sy > h + 50) return;
 
-      // Get or create a pooled element
       let tag: HTMLDivElement;
       if (poolIdx < this.tagPool.length) {
         tag = this.tagPool[poolIdx];
       } else {
         tag = document.createElement('div');
-        tag.style.cssText = `
-          position:absolute;left:0;top:0;transform:translate(-50%,-100%);
-          font-family:monospace;font-size:11px;color:#fff;
-          text-shadow:0 0 4px rgba(0,0,0,0.8), 0 1px 2px rgba(0,0,0,0.9);
-          white-space:nowrap;pointer-events:none;
-        `;
+        tag.style.cssText = 'position:absolute;left:0;top:0;transform:translate(-50%,-100%);font-family:monospace;font-size:11px;color:#fff;text-shadow:0 0 4px rgba(0,0,0,0.8),0 1px 2px rgba(0,0,0,0.9);white-space:nowrap;pointer-events:none;';
         container.appendChild(tag);
         this.tagPool.push(tag);
       }
 
-      tag.textContent = p.name; // Safe: textContent, no XSS
+      tag.textContent = p.name;
       tag.style.left = `${sx}px`;
       tag.style.top = `${sy}px`;
       tag.style.display = '';

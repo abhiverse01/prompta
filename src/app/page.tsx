@@ -4,8 +4,6 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { CHARACTERS, CharacterConfig } from '@/game/characters';
 import { GameEngine } from '@/game/engine';
 
-/* ─────────────────────────────────────────────────────────────────── */
-
 export default function GamePage() {
   const [phase, setPhase] = useState<'select' | 'loading' | 'playing'>('select');
   const [selectedChar, setSelectedChar] = useState<CharacterConfig | null>(null);
@@ -14,21 +12,28 @@ export default function GamePage() {
   const hudRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<GameEngine | null>(null);
 
-  // Clean up on unmount
+  // Clean up engine on unmount
   useEffect(() => {
     return () => {
       engineRef.current?.dispose();
+      engineRef.current = null;
     };
   }, []);
 
-  // Initialise the game engine once we enter the playing phase
+  // Create engine when entering playing phase
   useEffect(() => {
     if (phase !== 'playing' || !canvasRef.current || !hudRef.current || !selectedChar) return;
 
-    // Small delay so the DOM is painted first
+    // Dispose any previous engine to prevent duplicates on re-render
+    if (engineRef.current) {
+      engineRef.current.dispose();
+      engineRef.current = null;
+    }
+
     const timer = setTimeout(() => {
+      if (!canvasRef.current || !hudRef.current) return;
       engineRef.current = new GameEngine(
-        canvasRef.current!,
+        canvasRef.current,
         {
           id: selectedChar.id,
           name: selectedChar.name,
@@ -36,21 +41,21 @@ export default function GamePage() {
           accent: selectedChar.accent,
         },
         playerName || selectedChar.name,
-        hudRef.current!
+        hudRef.current
       );
     }, 100);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+    };
   }, [phase, selectedChar, playerName]);
 
   const handleEnter = useCallback(() => {
     if (!selectedChar) return;
     setPhase('loading');
-    // Brief artificial loading screen for atmosphere
     setTimeout(() => setPhase('playing'), 1800);
   }, [selectedChar]);
 
-  /* ── Character Selection ────────────────────────────────────── */
   if (phase === 'select') {
     return <CharacterSelect
       selected={selectedChar}
@@ -61,12 +66,10 @@ export default function GamePage() {
     />;
   }
 
-  /* ── Loading Screen ────────────────────────────────────────── */
   if (phase === 'loading') {
     return <LoadingScreen character={selectedChar!} />;
   }
 
-  /* ── Game View ─────────────────────────────────────────────── */
   return (
     <div style={{ position: 'fixed', inset: 0, overflow: 'hidden' }}>
       <canvas ref={canvasRef} style={{ display: 'block', width: '100%', height: '100%' }} />
@@ -92,10 +95,8 @@ function CharacterSelect({
 }) {
   return (
     <div className="select-screen">
-      {/* Animated background particles */}
       <div className="select-bg-particles" />
       <div className="select-overlay" />
-
       <div className="select-container">
         <h1 className="select-title">
           <span className="title-glow">Enter the Realm</span>
@@ -103,8 +104,6 @@ function CharacterSelect({
         <p className="select-subtitle">
           Choose your champion and step into a living, breathing world alongside other adventurers.
         </p>
-
-        {/* Character Grid */}
         <div className="char-grid">
           {CHARACTERS.map((c) => (
             <button
@@ -126,8 +125,6 @@ function CharacterSelect({
             </button>
           ))}
         </div>
-
-        {/* Name Input */}
         <div className="name-row">
           <input
             className="name-input"

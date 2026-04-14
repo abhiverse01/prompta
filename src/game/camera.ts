@@ -17,6 +17,22 @@ export class CameraController {
 
   private targetPos = new THREE.Vector3();
   private currentPos = new THREE.Vector3();
+  private lookTarget = new THREE.Vector3();
+
+  /** Reusable vectors to avoid per-frame allocations */
+  private _offset = new THREE.Vector3();
+  private _xAxis = new THREE.Vector3(1, 0, 0);
+  private _yAxis = new THREE.Vector3(0, 1, 0);
+
+  /** Set initial camera position to match player spawn */
+  initPosition(playerPos: THREE.Vector3): void {
+    this.currentPos.set(playerPos.x - 5, playerPos.y + 8, playerPos.z - 8);
+    this.targetPos.copy(this.currentPos);
+    this.camera.position.copy(this.currentPos);
+    this.lookTarget.copy(playerPos);
+    this.lookTarget.y += 1.5;
+    this.camera.lookAt(this.lookTarget);
+  }
 
   constructor() {
     this.camera = new THREE.PerspectiveCamera(
@@ -25,11 +41,14 @@ export class CameraController {
       0.5,
       2000
     );
-    this.camera.position.set(0, 15, -15);
   }
 
   bindPointer(canvas: HTMLCanvasElement): () => void {
-    const onClick = () => canvas.requestPointerLock();
+    const onClick = () => {
+      if (!document.pointerLockElement) {
+        canvas.requestPointerLock().catch(() => {});
+      }
+    };
     canvas.addEventListener('click', onClick);
 
     const onMove = (e: MouseEvent) => {
@@ -61,12 +80,12 @@ export class CameraController {
   }
 
   update(dt: number, player: Player): void {
-    // Calculate desired camera position
-    const offset = new THREE.Vector3(0, 0, -this.distance);
-    offset.applyAxisAngle(new THREE.Vector3(1, 0, 0), this.pitch);
-    offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw);
+    // Calculate offset — reuse cached vector, zero allocations
+    this._offset.set(0, 0, -this.distance);
+    this._offset.applyAxisAngle(this._xAxis, this.pitch);
+    this._offset.applyAxisAngle(this._yAxis, this.yaw);
 
-    this.targetPos.copy(player.position).add(offset);
+    this.targetPos.copy(player.position).add(this._offset);
     this.targetPos.y = Math.max(this.targetPos.y, player.position.y + 1.5);
 
     // Smooth follow
@@ -75,8 +94,8 @@ export class CameraController {
     this.camera.position.copy(this.currentPos);
 
     // Look at player head
-    const lookTarget = new THREE.Vector3().copy(player.position);
-    lookTarget.y += 1.5;
-    this.camera.lookAt(lookTarget);
+    this.lookTarget.copy(player.position);
+    this.lookTarget.y += 1.5;
+    this.camera.lookAt(this.lookTarget);
   }
 }

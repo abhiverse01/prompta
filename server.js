@@ -11,38 +11,36 @@ const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
 
 const players = new Map();
+/** Per-socket rate limit buckets — cleaned up on disconnect */
+const rateLimiters = new Map();
 
-/** Strip everything except safe printable characters */
 function sanitizeName(str) {
   if (typeof str !== 'string') return 'Wanderer';
   return str.replace(/[^\w\s\-_.]/g, '').slice(0, 20).trim() || 'Wanderer';
 }
 
-/** Only allow hex colour codes */
 function sanitizeColor(str) {
   if (typeof str !== 'string') return '#ff4444';
   if (/^#[0-9a-fA-F]{6}$/.test(str)) return str;
   return '#ff4444';
 }
 
-/** Strip HTML tags and limit length */
 function sanitizeText(str) {
   if (typeof str !== 'string') return '';
   return str.replace(/</g, '&lt;').replace(/>/g, '&gt;').slice(0, 200);
 }
 
-/** Rate limiter — max `maxCalls` calls per window per socket */
 function createRateLimiter(maxCalls, windowMs) {
-  const buckets = new Map();
-  return function check(socketId) {
+  let start = Date.now();
+  let count = 0;
+  return function check() {
     const now = Date.now();
-    let entry = buckets.get(socketId);
-    if (!entry || now - entry.start > windowMs) {
-      entry = { start: now, count: 0 };
-      buckets.set(socketId, entry);
+    if (now - start > windowMs) {
+      start = now;
+      count = 0;
     }
-    entry.count++;
-    return entry.count <= maxCalls;
+    count++;
+    return count <= maxCalls;
   };
 }
 
@@ -59,16 +57,12 @@ app.prepare().then(() => {
     console.log(`[+] Player connected: ${socket.id}`);
 
     // Per-socket rate limiters
-    const moveLimiter  = createRateLimiter(40, 1000);   // 40 moves/sec
-    const chatLimiter  = createRateLimiter(2, 2000);    // 2 msgs / 2 sec
+    const moveLimiter = createRateLimiter(40, 1000);
+    const chatLimiter = createRateLimiter(2, 2000);
+    rateLimiters.set(socket.id, { moveLimiter, chatLimiter });
 
-    // Send the full world state to the newly connected player
-    socket.emit(
-      'world:state',
-      Array.from(players.values())
-    );
+    socket.emit('world:state', Array.from(players.values()));
 
-    // Player joins with their chosen character info
     socket.on('player:join', (data) => {
       const player = {
         id: socket.id,
@@ -90,14 +84,11 @@ app.prepare().then(() => {
         message: `${player.name} has entered the world`,
         count: players.size,
       });
-      console.log(
-        `[>] ${player.name} joined (${players.size} online)`
-      );
+      console.log(`[>] ${player.name} joined (${players.size} online)`);
     });
 
-    // Position / rotation updates at ~20 Hz
     socket.on('player:move', (data) => {
-      if (!moveLimiter(socket.id)) return; // rate limited
+      if (!moveLimiter()) return;
       const player = players.get(socket.id);
       if (!player) return;
       if (typeof data.x !== 'number' || typeof data.z !== 'number') return;
@@ -116,9 +107,8 @@ app.prepare().then(() => {
       });
     });
 
-    // Chat messages
     socket.on('chat:message', (data) => {
-      if (!chatLimiter(socket.id)) return; // rate limited
+      if (!chatLimiter()) return;
       const player = players.get(socket.id);
       if (!player) return;
       const text = sanitizeText(data?.text);
@@ -141,14 +131,13 @@ app.prepare().then(() => {
           message: `${player.name} left the world`,
           count: players.size,
         });
-        console.log(
-          `[<] ${player.name} disconnected (${players.size} online)`
-        );
+        console.log(`[<] ${player.name} disconnected (${players.size} online)`);
       }
+      // Clean up rate limiter to prevent memory leak
+      rateLimiters.delete(socket.id);
     });
   });
 
-  // Let Next.js handle every HTTP request
   expressApp.all('/{*splat}', (req, res) => handle(req, res));
 
   httpServer.listen(port, hostname, () => {

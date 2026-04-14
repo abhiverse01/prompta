@@ -73,6 +73,10 @@ html, body {
   letter-spacing: -1px;
 }
 
+@media (max-width: 600px) {
+  .select-title { font-size: 32px; }
+}
+
 .title-glow {
   background: linear-gradient(135deg, #f0c040, #e8653a, #c74beb, #4a8fe7);
   -webkit-background-clip: text;
@@ -88,6 +92,10 @@ html, body {
   line-height: 1.6;
 }
 
+@media (max-width: 600px) {
+  .select-subtitle { font-size: 14px; margin-bottom: 24px; }
+}
+
 /* ── Character Cards ────────────────────────────────────────── */
 
 .char-grid {
@@ -98,7 +106,10 @@ html, body {
 }
 
 @media (max-width: 700px) {
-  .char-grid { grid-template-columns: repeat(2, 1fr); }
+  .char-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+}
+@media (max-width: 400px) {
+  .char-grid { grid-template-columns: 1fr; }
 }
 
 .char-card {
@@ -118,22 +129,23 @@ html, body {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, color-mix(in srgb, var(--card-color) 15%, transparent), transparent 60%);
+  /* color-mix with fallback for older browsers */
+  background: linear-gradient(135deg, var(--card-color) 15%, transparent 60%);
   opacity: 0;
   transition: opacity 0.25s;
 }
 
 .char-card:hover {
-  border-color: color-mix(in srgb, var(--card-color) 50%, rgba(255,255,255,0.2));
+  border-color: var(--card-color);
   transform: translateY(-2px);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), 0 0 20px color-mix(in srgb, var(--card-color) 20%, transparent);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), 0 0 20px rgba(255, 255, 255, 0.05);
 }
 
 .char-card:hover::before { opacity: 1; }
 
 .char-card--selected {
   border-color: var(--card-color);
-  box-shadow: 0 0 24px color-mix(in srgb, var(--card-color) 30%, transparent), inset 0 0 30px color-mix(in srgb, var(--card-color) 8%, transparent);
+  box-shadow: 0 0 24px rgba(255, 255, 255, 0.1), inset 0 0 30px rgba(255, 255, 255, 0.03);
 }
 
 .char-card--selected::before { opacity: 1; }
@@ -187,6 +199,10 @@ html, body {
   display: flex;
   gap: 12px;
   align-items: stretch;
+}
+
+@media (max-width: 500px) {
+  .name-row { flex-direction: column; }
 }
 
 .name-input {
@@ -251,13 +267,15 @@ html, body {
 .loading-bg {
   position: absolute;
   inset: 0;
-  background: radial-gradient(ellipse at center, color-mix(in srgb, var(--load-color, #c74beb) 10%, #0a0a0f) 0%, #0a0a0f 70%);
+  /* color-mix fallback: use the color directly */
+  background: radial-gradient(ellipse at center, var(--load-color, #c74beb) 0%, #0a0a0f 70%);
+  opacity: 0.12;
   animation: loadPulse 2s ease-in-out infinite alternate;
 }
 
 @keyframes loadPulse {
-  0%   { opacity: 0.8; }
-  100% { opacity: 1; }
+  0%   { opacity: 0.08; }
+  100% { opacity: 0.15; }
 }
 
 .loading-content {
@@ -316,4 +334,25 @@ html, body {
   font-size: 13px;
   color: rgba(255, 255, 255, 0.35);
   font-family: monospace;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   CHAT SCROLLBAR (WebKit + Firefox)
+   ═══════════════════════════════════════════════════════════════════ */
+
+#chat-log::-webkit-scrollbar {
+  width: 4px;
+}
+
+#chat-log::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+#chat-log::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+}
+
+#chat-log::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.35);
 }

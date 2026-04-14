@@ -2,58 +2,49 @@ import * as THREE from 'three';
 import { Noise } from './noise';
 import { sampleHeight, WATER_LEVEL } from './terrain';
 
-interface WorldObject {
-  mesh: THREE.InstancedMesh;
-  count: number;
-}
-
 export class World {
-  private objects: WorldObject[] = [];
-
   constructor(scene: THREE.Scene) {
     const rng = new Noise(123);
-    const treeCount = 600;
-    const rockCount = 300;
-
-    this.spawnTrees(scene, treeCount, rng);
-    this.spawnRocks(scene, rockCount, rng);
+    this.spawnTrees(scene, 600, rng);
+    this.spawnRocks(scene, 300, rng);
     this.spawnBuildings(scene, rng);
   }
 
-  private spawnTrees(scene: THREE.Scene, count: number, rng: Noise): void {
-    // Trunk
+  private spawnTrees(scene: THREE.Scene, maxCount: number, rng: Noise): void {
     const trunkGeo = new THREE.CylinderGeometry(0.2, 0.35, 3, 6);
     const trunkMat = new THREE.MeshStandardMaterial({ color: '#5d3a1a', roughness: 0.9 });
-    const trunkMesh = new THREE.InstancedMesh(trunkGeo, trunkMat, count);
+    const trunkMesh = new THREE.InstancedMesh(trunkGeo, trunkMat, maxCount);
     trunkMesh.castShadow = true;
 
-    // Foliage
     const leafGeo = new THREE.ConeGeometry(1.8, 4, 8);
     const leafMat = new THREE.MeshStandardMaterial({ color: '#1a7a1a', roughness: 0.85 });
-    const leafMesh = new THREE.InstancedMesh(leafGeo, leafMat, count);
+    const leafMesh = new THREE.InstancedMesh(leafGeo, leafMat, maxCount);
     leafMesh.castShadow = true;
 
     const dummy = new THREE.Object3D();
     let placed = 0;
     const half = 900;
+    // Use a separate attempt counter that ALWAYS increments to prevent infinite loops.
+    // The old code used `placed` as the counter, causing an infinite loop when a
+    // noise position didn't match terrain criteria (placed never incremented).
+    let attempt = 0;
+    const maxAttempts = maxCount * 20;
 
-    while (placed < count) {
-      const x = (rng.noise2D(placed * 0.73, placed * 0.37) * 0.5 + 0.5) * half * 2 - half;
-      const z = (rng.noise2D(placed * 0.41, placed * 0.89) * 0.5 + 0.5) * half * 2 - half;
+    while (placed < maxCount && attempt < maxAttempts) {
+      attempt++;
+      const x = (rng.noise2D(attempt * 0.73, attempt * 0.37) * 0.5 + 0.5) * half * 2 - half;
+      const z = (rng.noise2D(attempt * 0.41, attempt * 0.89) * 0.5 + 0.5) * half * 2 - half;
       const h = sampleHeight(x, z);
 
-      // Only place on grass (height between 8 and 30)
       if (h > 8 && h < 30 && h > WATER_LEVEL + 1) {
         const scale = 0.7 + rng.noise2D(x * 0.1, z * 0.1) * 0.3 + 0.3;
 
-        // Trunk
         dummy.position.set(x, h + 1.5 * scale, z);
         dummy.scale.set(scale, scale, scale);
         dummy.rotation.set(0, rng.noise2D(x, z) * Math.PI, 0);
         dummy.updateMatrix();
         trunkMesh.setMatrixAt(placed, dummy.matrix);
 
-        // Leaves
         dummy.position.set(x, h + 4.5 * scale, z);
         dummy.updateMatrix();
         leafMesh.setMatrixAt(placed, dummy.matrix);
@@ -62,34 +53,37 @@ export class World {
       }
     }
 
+    trunkMesh.count = placed;
+    leafMesh.count = placed;
     trunkMesh.instanceMatrix.needsUpdate = true;
     leafMesh.instanceMatrix.needsUpdate = true;
     scene.add(trunkMesh);
     scene.add(leafMesh);
-    this.objects.push({ mesh: trunkMesh, count }, { mesh: leafMesh, count });
   }
 
-  private spawnRocks(scene: THREE.Scene, count: number, rng: Noise): void {
+  private spawnRocks(scene: THREE.Scene, maxCount: number, rng: Noise): void {
     const rockGeo = new THREE.DodecahedronGeometry(1, 0);
     const rockMat = new THREE.MeshStandardMaterial({
       color: '#7a7a72',
       roughness: 0.95,
       flatShading: true,
     });
-    const rockMesh = new THREE.InstancedMesh(rockGeo, rockMat, count);
+    const rockMesh = new THREE.InstancedMesh(rockGeo, rockMat, maxCount);
     rockMesh.castShadow = true;
     rockMesh.receiveShadow = true;
 
     const dummy = new THREE.Object3D();
     let placed = 0;
     const half = 900;
+    let attempt = 0;
+    const maxAttempts = maxCount * 20;
 
-    while (placed < count) {
-      const x = (rng.noise2D(placed * 0.53 + 100, placed * 0.17) * 0.5 + 0.5) * half * 2 - half;
-      const z = (rng.noise2D(placed * 0.71 + 200, placed * 0.43) * 0.5 + 0.5) * half * 2 - half;
+    while (placed < maxCount && attempt < maxAttempts) {
+      attempt++;
+      const x = (rng.noise2D(attempt * 0.53 + 100, attempt * 0.17) * 0.5 + 0.5) * half * 2 - half;
+      const z = (rng.noise2D(attempt * 0.71 + 200, attempt * 0.43) * 0.5 + 0.5) * half * 2 - half;
       const h = sampleHeight(x, z);
 
-      // Rocks on higher ground
       if (h > 15) {
         const scale = 0.3 + Math.abs(rng.noise2D(x * 0.05, z * 0.05)) * 1.5;
         dummy.position.set(x, h + scale * 0.3, z);
@@ -105,13 +99,12 @@ export class World {
       }
     }
 
+    rockMesh.count = placed;
     rockMesh.instanceMatrix.needsUpdate = true;
     scene.add(rockMesh);
-    this.objects.push({ mesh: rockMesh, count });
   }
 
   private spawnBuildings(scene: THREE.Scene, rng: Noise): void {
-    const buildingCount = 8;
     const buildingMat = new THREE.MeshStandardMaterial({
       color: '#c4a882',
       roughness: 0.85,
@@ -121,8 +114,8 @@ export class World {
       roughness: 0.7,
     });
 
-    for (let i = 0; i < buildingCount; i++) {
-      const angle = (i / buildingCount) * Math.PI * 2;
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 2;
       const dist = 60 + i * 40;
       const bx = Math.cos(angle) * dist;
       const bz = Math.sin(angle) * dist;
@@ -131,7 +124,6 @@ export class World {
       if (h > 6 && h < 25) {
         const group = new THREE.Group();
 
-        // Walls
         const w = 5 + rng.noise2D(i * 10, 0) * 3 + 2;
         const bh = 4 + rng.noise2D(0, i * 10) * 2 + 1;
         const d = 4 + rng.noise2D(i * 5, i * 5) * 2 + 1;
@@ -142,7 +134,6 @@ export class World {
         wall.receiveShadow = true;
         group.add(wall);
 
-        // Roof (pyramid)
         const roofGeo = new THREE.ConeGeometry(Math.max(w, d) * 0.75, 3, 4);
         const roof = new THREE.Mesh(roofGeo, roofMat);
         roof.position.y = bh + 1.5;
