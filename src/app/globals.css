@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #0a0a0f;
+  --bg: #07070c;
   --fg: #e4e4e8;
 }
 
@@ -17,323 +17,505 @@ html, body {
   overflow: hidden;
   background: var(--bg);
   color: var(--fg);
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   GAME WRAPPER (playing phase)
+   ═══════════════════════════════════════════════════════════════════ */
+
+.game-wrapper {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #000;
+}
+
+/* Canvas: NO width/height CSS — Three.js renderer.setSize() manages
+   the canvas drawing buffer AND its CSS dimensions via inline styles.
+   Adding CSS width/height here would fight with Three.js and cause
+   flickering / resolution mismatches. */
+.game-canvas {
+  display: block;
+}
+
+.game-hud-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
    CHARACTER SELECTION SCREEN
    ═══════════════════════════════════════════════════════════════════ */
 
-.select-screen {
+.cs-root {
   position: fixed;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow-y: auto;
-  padding: 40px 20px;
+  overflow-x: hidden;
+  padding: 32px 16px;
 }
 
-.select-bg-particles {
+/* Animated gradient background */
+.cs-bg {
   position: fixed;
   inset: -50%;
   width: 200%;
   height: 200%;
   background:
-    radial-gradient(ellipse at 20% 50%, rgba(30, 60, 120, 0.3) 0%, transparent 50%),
-    radial-gradient(ellipse at 80% 20%, rgba(80, 20, 100, 0.25) 0%, transparent 50%),
-    radial-gradient(ellipse at 50% 80%, rgba(20, 80, 60, 0.2) 0%, transparent 50%);
-  animation: bgDrift 20s ease-in-out infinite alternate;
+    radial-gradient(ellipse at 20% 50%, rgba(30, 60, 120, 0.25) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 20%, rgba(80, 20, 100, 0.20) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 80%, rgba(20, 80, 60, 0.18) 0%, transparent 50%),
+    radial-gradient(ellipse at 60% 30%, rgba(120, 40, 60, 0.12) 0%, transparent 40%);
+  animation: csBgDrift 25s ease-in-out infinite alternate;
+  will-change: transform;
 }
 
-@keyframes bgDrift {
+@keyframes csBgDrift {
   0%   { transform: translate(0, 0) rotate(0deg); }
+  50%  { transform: translate(1%, -1.5%) rotate(1.5deg); }
   100% { transform: translate(2%, -2%) rotate(3deg); }
 }
 
-.select-overlay {
+/* Vignette overlay */
+.cs-vignette {
   position: fixed;
   inset: 0;
-  background: radial-gradient(ellipse at center, transparent 0%, rgba(5, 5, 15, 0.6) 100%);
+  background: radial-gradient(ellipse at center, transparent 30%, rgba(5, 5, 15, 0.7) 100%);
   pointer-events: none;
 }
 
-.select-container {
+/* Center container */
+.cs-container {
   position: relative;
   z-index: 1;
-  max-width: 960px;
+  max-width: 980px;
   width: 100%;
   text-align: center;
 }
 
-.select-title {
-  font-size: 48px;
+/* Title */
+.cs-title {
+  margin-bottom: 8px;
+}
+
+.cs-title-text {
+  font-size: 52px;
   font-weight: 800;
-  margin-bottom: 12px;
-  letter-spacing: -1px;
-}
-
-@media (max-width: 600px) {
-  .select-title { font-size: 32px; }
-}
-
-.title-glow {
-  background: linear-gradient(135deg, #f0c040, #e8653a, #c74beb, #4a8fe7);
+  letter-spacing: -1.5px;
+  line-height: 1.1;
+  background: linear-gradient(135deg, #f0c040 0%, #e8653a 30%, #c74beb 60%, #4a8fe7 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  filter: drop-shadow(0 0 30px rgba(200, 120, 255, 0.3));
+  filter: drop-shadow(0 0 40px rgba(200, 120, 255, 0.25));
+  animation: csTitleShimmer 6s ease-in-out infinite alternate;
 }
 
-.select-subtitle {
-  font-size: 16px;
-  color: rgba(255, 255, 255, 0.5);
-  margin-bottom: 40px;
+@keyframes csTitleShimmer {
+  0%   { filter: drop-shadow(0 0 30px rgba(200, 120, 255, 0.2)); }
+  100% { filter: drop-shadow(0 0 50px rgba(240, 192, 64, 0.3)); }
+}
+
+.cs-subtitle {
+  font-size: 15px;
+  color: rgba(255, 255, 255, 0.45);
+  margin-bottom: 36px;
   line-height: 1.6;
+  max-width: 520px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
-@media (max-width: 600px) {
-  .select-subtitle { font-size: 14px; margin-bottom: 24px; }
-}
+/* ── Character Cards Grid ──────────────────────────────────────── */
 
-/* ── Character Cards ────────────────────────────────────────── */
-
-.char-grid {
+.cs-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 14px;
-  margin-bottom: 30px;
+  margin-bottom: 28px;
 }
 
-@media (max-width: 700px) {
-  .char-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
-}
-@media (max-width: 400px) {
-  .char-grid { grid-template-columns: 1fr; }
+@media (max-width: 720px) {
+  .cs-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .cs-title-text { font-size: 36px; letter-spacing: -1px; }
+  .cs-subtitle { font-size: 13px; margin-bottom: 24px; }
 }
 
-.char-card {
+@media (max-width: 420px) {
+  .cs-grid { grid-template-columns: 1fr; max-width: 320px; margin-left: auto; margin-right: auto; }
+  .cs-title-text { font-size: 30px; }
+}
+
+/* Card base */
+.cs-card {
   position: relative;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
-  padding: 22px 16px 18px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  padding: 24px 18px 20px;
   cursor: pointer;
-  transition: all 0.25s ease;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   text-align: left;
   overflow: hidden;
   color: #fff;
+  outline: none;
+  font-family: inherit;
+  font-size: inherit;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.char-card::before {
+.cs-card::before {
   content: '';
   position: absolute;
   inset: 0;
-  /* color-mix with fallback for older browsers */
-  background: linear-gradient(135deg, var(--card-color) 15%, transparent 60%);
+  background: linear-gradient(135deg, var(--card-color) 10%, transparent 55%);
   opacity: 0;
-  transition: opacity 0.25s;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
 }
 
-.char-card:hover {
+/* Animated shimmer effect on hover */
+.cs-card__shimmer {
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.04), transparent);
+  pointer-events: none;
+  transition: none;
+}
+
+.cs-card:hover .cs-card__shimmer {
+  animation: csShimmer 0.8s ease forwards;
+}
+
+@keyframes csShimmer {
+  to { left: 100%; }
+}
+
+.cs-card:hover {
   border-color: var(--card-color);
-  transform: translateY(-2px);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), 0 0 20px rgba(255, 255, 255, 0.05);
+  transform: translateY(-3px) scale(1.01);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    0 0 24px rgba(255, 255, 255, 0.03),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-.char-card:hover::before { opacity: 1; }
+.cs-card:hover::before { opacity: 1; }
 
-.char-card--selected {
+.cs-card:active {
+  transform: translateY(-1px) scale(0.99);
+}
+
+/* Selected state */
+.cs-card--active {
   border-color: var(--card-color);
-  box-shadow: 0 0 24px rgba(255, 255, 255, 0.1), inset 0 0 30px rgba(255, 255, 255, 0.03);
+  box-shadow:
+    0 0 0 1px var(--card-color),
+    0 4px 24px rgba(0, 0, 0, 0.3),
+    0 0 40px rgba(255, 255, 255, 0.04);
 }
 
-.char-card--selected::before { opacity: 1; }
+.cs-card--active::before { opacity: 1; }
 
-.char-icon {
-  font-size: 32px;
-  margin-bottom: 8px;
+/* Card content */
+.cs-card__icon {
+  font-size: 36px;
+  margin-bottom: 10px;
   position: relative;
+  line-height: 1;
 }
 
-.char-name {
+.cs-card__name {
   font-size: 18px;
   font-weight: 700;
   color: var(--card-accent);
   position: relative;
+  letter-spacing: -0.3px;
 }
 
-.char-title {
+.cs-card__title {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.35);
+  color: rgba(255, 255, 255, 0.3);
   margin-top: 2px;
   font-style: italic;
   position: relative;
+  letter-spacing: 0.2px;
 }
 
-.char-desc {
+.cs-card__desc {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.5);
-  margin-top: 10px;
-  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.45);
+  margin-top: 12px;
+  line-height: 1.55;
   position: relative;
 }
 
-.char-selected-badge {
+.cs-card__badge {
   position: absolute;
-  top: 10px;
-  right: 10px;
+  top: 12px;
+  right: 12px;
   background: var(--card-color);
   color: #fff;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
   padding: 3px 10px;
   border-radius: 20px;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
 }
 
-/* ── Name Input & Enter Button ─────────────────────────────── */
+/* ── Name Input & Enter Button ─────────────────────────────────── */
 
-.name-row {
+.cs-footer {
   display: flex;
   gap: 12px;
   align-items: stretch;
 }
 
 @media (max-width: 500px) {
-  .name-row { flex-direction: column; }
+  .cs-footer { flex-direction: column; }
 }
 
-.name-input {
+.cs-input {
   flex: 1;
-  padding: 12px 18px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
+  padding: 14px 20px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
   color: #fff;
   font-size: 15px;
+  font-family: inherit;
   outline: none;
-  transition: border-color 0.2s;
+  transition: all 0.25s ease;
 }
 
-.name-input:focus {
-  border-color: rgba(255, 255, 255, 0.3);
+.cs-input:focus {
+  border-color: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.04);
 }
 
-.name-input::placeholder {
-  color: rgba(255, 255, 255, 0.25);
+.cs-input::placeholder {
+  color: rgba(255, 255, 255, 0.2);
 }
 
-.enter-btn {
-  padding: 12px 28px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
-  color: rgba(255, 255, 255, 0.4);
+.cs-btn {
+  padding: 14px 32px;
+  border-radius: 12px;
   font-size: 14px;
   font-weight: 600;
+  font-family: inherit;
   cursor: not-allowed;
-  transition: all 0.25s;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   white-space: nowrap;
+  outline: none;
+  border: 1px solid transparent;
 }
 
-.enter-btn--ready {
+.cs-btn--disabled {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.3);
+  pointer-events: none;
+}
+
+.cs-btn--ready {
   background: linear-gradient(135deg, #c74beb, #4a8fe7);
-  border-color: transparent;
   color: #fff;
   cursor: pointer;
-  box-shadow: 0 4px 20px rgba(100, 60, 200, 0.3);
+  box-shadow: 0 4px 20px rgba(100, 60, 200, 0.3), inset 0 1px 0 rgba(255,255,255,0.15);
+  border-color: transparent;
 }
 
-.enter-btn--ready:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 28px rgba(100, 60, 200, 0.45);
+.cs-btn--ready:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 28px rgba(100, 60, 200, 0.45), inset 0 1px 0 rgba(255,255,255,0.2);
+}
+
+.cs-btn--ready:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 12px rgba(100, 60, 200, 0.3);
 }
 
 /* ═══════════════════════════════════════════════════════════════════
    LOADING SCREEN
    ═══════════════════════════════════════════════════════════════════ */
 
-.loading-screen {
+.ld-root {
   position: fixed;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 100;
+  background: var(--bg);
 }
 
-.loading-bg {
+.ld-glow {
   position: absolute;
   inset: 0;
-  /* color-mix fallback: use the color directly */
-  background: radial-gradient(ellipse at center, var(--load-color, #c74beb) 0%, #0a0a0f 70%);
-  opacity: 0.12;
-  animation: loadPulse 2s ease-in-out infinite alternate;
+  background: radial-gradient(ellipse at center, var(--ld-color, #c74beb) 0%, transparent 65%);
+  opacity: 0.10;
+  animation: ldGlowPulse 2s ease-in-out infinite alternate;
 }
 
-@keyframes loadPulse {
-  0%   { opacity: 0.08; }
-  100% { opacity: 0.15; }
+@keyframes ldGlowPulse {
+  0%   { opacity: 0.06; transform: scale(0.95); }
+  100% { opacity: 0.14; transform: scale(1.05); }
 }
 
-.loading-content {
+.ld-content {
   position: relative;
   text-align: center;
+  animation: ldFadeIn 0.5s ease-out;
 }
 
-.loading-icon {
-  font-size: 64px;
-  margin-bottom: 16px;
-  animation: iconFloat 2s ease-in-out infinite;
+@keyframes ldFadeIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes iconFloat {
+.ld-icon {
+  font-size: 72px;
+  margin-bottom: 20px;
+  animation: ldFloat 2.4s ease-in-out infinite;
+  filter: drop-shadow(0 4px 16px rgba(0,0,0,0.3));
+}
+
+@keyframes ldFloat {
   0%, 100% { transform: translateY(0); }
-  50%      { transform: translateY(-10px); }
+  50%      { transform: translateY(-12px); }
 }
 
-.loading-name {
-  font-size: 36px;
+.ld-name {
+  font-size: 40px;
   font-weight: 800;
-  color: var(--load-color, #fff);
+  color: var(--ld-color, #fff);
   margin-bottom: 4px;
+  letter-spacing: -1px;
 }
 
-.loading-title {
+.ld-title {
   font-size: 14px;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(255, 255, 255, 0.35);
   font-style: italic;
-  margin-bottom: 30px;
+  margin-bottom: 32px;
+  letter-spacing: 0.3px;
 }
 
-.loading-bar-track {
-  width: 260px;
-  height: 4px;
-  background: rgba(255, 255, 255, 0.1);
+.ld-bar {
+  width: 280px;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.08);
   border-radius: 2px;
-  margin: 0 auto 16px;
+  margin: 0 auto 20px;
   overflow: hidden;
 }
 
-.loading-bar-fill {
+.ld-bar__fill {
   width: 40%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, var(--load-color, #c74beb), transparent);
+  background: linear-gradient(90deg, transparent 0%, var(--ld-color, #c74beb) 50%, transparent 100%);
   border-radius: 2px;
-  animation: barSlide 1.2s ease-in-out infinite;
+  animation: ldSlide 1.2s ease-in-out infinite;
 }
 
-@keyframes barSlide {
-  0%   { transform: translateX(-100%); }
-  100% { transform: translateX(350%); }
+@keyframes ldSlide {
+  0%   { transform: translateX(-150%); }
+  100% { transform: translateX(400%); }
 }
 
-.loading-text {
+.ld-text {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.35);
-  font-family: monospace;
+  color: rgba(255, 255, 255, 0.3);
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  letter-spacing: 0.5px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   ERROR SCREEN
+   ═══════════════════════════════════════════════════════════════════ */
+
+.err-root {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  background: var(--bg);
+}
+
+.err-content {
+  text-align: center;
+  max-width: 400px;
+  padding: 32px;
+}
+
+.err-icon {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.1);
+  border: 2px solid rgba(239, 68, 68, 0.3);
+  font-size: 28px;
+  font-weight: 800;
+  color: #ef4444;
+}
+
+.err-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 10px;
+}
+
+.err-msg {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 24px;
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+.err-btn {
+  padding: 12px 32px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  outline: none;
+}
+
+.err-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.err-btn:active {
+  transform: scale(0.97);
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -349,10 +531,10 @@ html, body {
 }
 
 #chat-log::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.15);
   border-radius: 2px;
 }
 
 #chat-log::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.3);
 }

@@ -36,52 +36,56 @@ export class HUD {
       </svg></div>
 
       <div id="hud-bars" style="position:fixed;top:20px;left:20px;z-index:20;pointer-events:none;">
-        <div style="font-size:12px;color:#ccc;margin-bottom:4px;font-family:monospace;">HP</div>
-        <div style="width:200px;height:14px;background:rgba(0,0,0,0.5);border-radius:7px;overflow:hidden;border:1px solid rgba(255,255,255,0.15);">
+        <div style="font-size:11px;color:rgba(255,255,255,0.6);margin-bottom:4px;font-family:'SF Mono','Fira Code',monospace;letter-spacing:0.5px;">HP</div>
+        <div style="width:200px;height:14px;background:rgba(0,0,0,0.5);border-radius:7px;overflow:hidden;border:1px solid rgba(255,255,255,0.12);">
           <div id="hp-bar" style="width:100%;height:100%;background:linear-gradient(90deg,#22c55e,#4ade80);border-radius:7px;transition:width 0.3s;"></div>
         </div>
-        <div style="font-size:12px;color:#ccc;margin-top:8px;margin-bottom:4px;font-family:monospace;">STAMINA</div>
-        <div style="width:200px;height:10px;background:rgba(0,0,0,0.5);border-radius:5px;overflow:hidden;border:1px solid rgba(255,255,255,0.15);">
+        <div style="font-size:11px;color:rgba(255,255,255,0.6);margin-top:8px;margin-bottom:4px;font-family:'SF Mono','Fira Code',monospace;letter-spacing:0.5px;">STAMINA</div>
+        <div style="width:200px;height:10px;background:rgba(0,0,0,0.5);border-radius:5px;overflow:hidden;border:1px solid rgba(255,255,255,0.12);">
           <div id="stamina-bar" style="width:100%;height:100%;background:linear-gradient(90deg,#f59e0b,#fbbf24);border-radius:5px;transition:width 0.3s;"></div>
         </div>
       </div>
 
       <div id="hud-count" style="position:fixed;top:20px;right:20px;z-index:20;pointer-events:none;
-        background:rgba(0,0,0,0.45);padding:6px 14px;border-radius:8px;
-        font-family:monospace;font-size:13px;color:#ddd;border:1px solid rgba(255,255,255,0.1);">
+        background:rgba(0,0,0,0.5);padding:6px 14px;border-radius:8px;
+        font-family:'SF Mono','Fira Code',monospace;font-size:12px;color:rgba(255,255,255,0.7);border:1px solid rgba(255,255,255,0.08);
+        backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);">
         <span id="online-count">1</span> online
       </div>
 
-      <div id="hud-coords" style="position:fixed;top:54px;right:20px;z-index:20;pointer-events:none;
-        font-family:monospace;font-size:11px;color:rgba(255,255,255,0.5);">X: 0   Z: 0</div>
+      <div id="hud-coords" style="position:fixed;top:52px;right:20px;z-index:20;pointer-events:none;
+        font-family:'SF Mono','Fira Code',monospace;font-size:10px;color:rgba(255,255,255,0.4);letter-spacing:0.3px;">X: 0   Z: 0</div>
 
       <div style="position:fixed;bottom:20px;right:20px;z-index:20;pointer-events:none;">
         <canvas id="hud-minimap" width="160" height="160" style="
           width:160px;height:160px;border-radius:50%;
-          border:2px solid rgba(255,255,255,0.2);
-          box-shadow:0 0 16px rgba(0,0,0,0.5);
+          border:2px solid rgba(255,255,255,0.15);
+          box-shadow:0 2px 20px rgba(0,0,0,0.5),inset 0 0 20px rgba(0,0,0,0.2);
         "></canvas>
       </div>
 
       <div id="hud-chat" style="position:fixed;bottom:20px;left:20px;z-index:20;width:340px;pointer-events:auto;">
         <div id="chat-log" style="
-          max-height:180px;overflow-y:auto;padding:8px;
-          background:rgba(0,0,0,0.35);border-radius:8px 8px 0 0;
-          font-family:monospace;font-size:12px;color:#ddd;
-          scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.2) transparent;
+          max-height:180px;overflow-y:auto;padding:8px 10px;
+          background:rgba(0,0,0,0.4);border-radius:10px 10px 0 0;
+          font-family:'SF Mono','Fira Code',monospace;font-size:12px;color:rgba(255,255,255,0.85);
+          scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.15) transparent;
+          border:1px solid rgba(255,255,255,0.06);border-bottom:none;
+          backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
         "></div>
         <input id="chat-input" type="text" maxlength="200" placeholder="Press T to chat..."
           style="
-            display:none;width:100%;padding:8px 10px;
-            background:rgba(0,0,0,0.55);border:1px solid rgba(255,255,255,0.15);
-            border-top:none;border-radius:0 0 8px 8px;
-            color:#eee;font-family:monospace;font-size:13px;outline:none;
+            display:none;width:100%;padding:10px 12px;
+            background:rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.1);
+            border-top:none;border-radius:0 0 10px 10px;
+            color:rgba(255,255,255,0.9);font-family:'SF Mono','Fira Code',monospace;font-size:13px;outline:none;
             box-sizing:border-box;
+            backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
           "/>
       </div>
 
       <div style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:20;
-        pointer-events:none;font-family:monospace;font-size:11px;color:rgba(255,255,255,0.3);">
+        pointer-events:none;font-family:'SF Mono','Fira Code',monospace;font-size:10px;color:rgba(255,255,255,0.22);letter-spacing:0.3px;">
         WASD move &middot; Shift sprint &middot; Space jump &middot; T chat &middot; Click to capture mouse
       </div>
 
@@ -122,16 +126,16 @@ export class HUD {
       // Open chat with T
       if (e.code === 'KeyT' && !this.chatVisible) {
         e.preventDefault();
-        e.stopPropagation(); // prevent game from seeing T
+        e.stopPropagation();
         this.chatVisible = true;
         player.inputBlocked = true;
-        player.clearInput(); // release any held movement keys
+        player.clearInput();
         this.chatInput.style.display = 'block';
         this.chatInput.focus();
         return;
       }
 
-      // Close chat with Escape — stopPropagation so pointer lock doesn't also release
+      // Close chat with Escape
       if (e.code === 'Escape' && this.chatVisible) {
         e.preventDefault();
         e.stopPropagation();
@@ -142,7 +146,7 @@ export class HUD {
     };
     const onSubmit = (e: KeyboardEvent) => {
       if (e.key === 'Enter' && this.chatVisible) {
-        e.stopPropagation(); // prevent game from seeing Enter
+        e.stopPropagation();
         const text = this.chatInput.value.trim();
         if (text) {
           mp.sendChat(text);
@@ -156,7 +160,7 @@ export class HUD {
         e.stopPropagation();
       }
     };
-    window.addEventListener('keydown', onKeyDown, true); // capture phase to intercept before game
+    window.addEventListener('keydown', onKeyDown, true);
     this.chatInput.addEventListener('keydown', onSubmit);
     return () => {
       window.removeEventListener('keydown', onKeyDown, true);
@@ -173,9 +177,11 @@ export class HUD {
   addMessage(msg: { name: string; text: string; time: number }): void {
     const el = document.createElement('div');
     el.style.marginBottom = '3px';
+    el.style.lineHeight = '1.5';
 
     const timeSpan = document.createElement('span');
-    timeSpan.style.color = 'rgba(255,255,255,0.35)';
+    timeSpan.style.color = 'rgba(255,255,255,0.3)';
+    timeSpan.style.fontSize = '10px';
     timeSpan.textContent = new Date(msg.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     const nameB = document.createElement('b');
@@ -196,7 +202,7 @@ export class HUD {
 
   addServerMessage(text: string): void {
     const el = document.createElement('div');
-    el.style.cssText = 'margin-bottom:3px;color:#86efac;font-style:italic;';
+    el.style.cssText = 'margin-bottom:3px;color:#86efac;font-style:italic;font-size:11px;';
     el.textContent = text;
     this.chatLog.appendChild(el);
     this.chatLog.scrollTop = this.chatLog.scrollHeight;
@@ -226,7 +232,7 @@ export class HUD {
     ctx.clearRect(0, 0, w, h);
 
     // Background circle
-    ctx.fillStyle = 'rgba(10,20,10,0.7)';
+    ctx.fillStyle = 'rgba(8,16,8,0.8)';
     ctx.beginPath();
     ctx.arc(cx, cy, cx, 0, Math.PI * 2);
     ctx.fill();
@@ -235,9 +241,9 @@ export class HUD {
     const gKey = `${w}_${h}`;
     if (!this.minimapGradient || this.minimapGradientKey !== gKey) {
       this.minimapGradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, cx);
-      this.minimapGradient.addColorStop(0, 'rgba(30,80,30,0.3)');
-      this.minimapGradient.addColorStop(0.5, 'rgba(40,70,30,0.2)');
-      this.minimapGradient.addColorStop(1, 'rgba(20,40,50,0.3)');
+      this.minimapGradient.addColorStop(0, 'rgba(30,80,30,0.25)');
+      this.minimapGradient.addColorStop(0.5, 'rgba(40,70,30,0.15)');
+      this.minimapGradient.addColorStop(1, 'rgba(15,30,40,0.25)');
       this.minimapGradientKey = gKey;
     }
     ctx.fillStyle = this.minimapGradient;
@@ -252,7 +258,7 @@ export class HUD {
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(-cameraYaw);
-    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
     ctx.beginPath();
     ctx.moveTo(0, -cx + 8);
     ctx.lineTo(-4, -cx + 18);
@@ -275,12 +281,12 @@ export class HUD {
       }
     });
 
-    // Self
+    // Self (player dot)
     ctx.fillStyle = '#fff';
     ctx.beginPath();
     ctx.arc(cx, cy, 4, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
     ctx.lineWidth = 1;
     ctx.stroke();
 
@@ -309,6 +315,7 @@ export class HUD {
     const w = window.innerWidth;
     const h = window.innerHeight;
 
+    // Hide all pooled tags first
     for (const tag of this.tagPool) {
       tag.style.display = 'none';
     }
@@ -333,7 +340,12 @@ export class HUD {
         tag = this.tagPool[poolIdx];
       } else {
         tag = document.createElement('div');
-        tag.style.cssText = 'position:absolute;left:0;top:0;transform:translate(-50%,-100%);font-family:monospace;font-size:11px;color:#fff;text-shadow:0 0 4px rgba(0,0,0,0.8),0 1px 2px rgba(0,0,0,0.9);white-space:nowrap;pointer-events:none;';
+        tag.style.cssText =
+          'position:absolute;left:0;top:0;transform:translate(-50%,-100%);' +
+          'font-family:"SF Mono","Fira Code",monospace;font-size:11px;color:#fff;' +
+          'text-shadow:0 0 4px rgba(0,0,0,0.9),0 1px 3px rgba(0,0,0,0.95);' +
+          'white-space:nowrap;pointer-events:none;letter-spacing:0.3px;' +
+          'background:rgba(0,0,0,0.35);padding:2px 6px;border-radius:4px;';
         container.appendChild(tag);
         this.tagPool.push(tag);
       }

@@ -40,6 +40,8 @@ export class GameEngine {
   private positionTimer = 0;
   private alive = true;
   private joined = false;
+  private contextLost = false;
+  private joinTimeout: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -47,27 +49,57 @@ export class GameEngine {
     playerName: string,
     hudContainer: HTMLElement
   ) {
-    // Renderer
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    // ── WebGL Context Loss / Restore handlers ─────────────────────
+    const onContextLost = (e: Event) => {
+      e.preventDefault();
+      console.warn('[Engine] WebGL context lost — pausing render loop');
+      this.contextLost = true;
+    };
+    const onContextRestored = () => {
+      console.log('[Engine] WebGL context restored — resuming');
+      this.contextLost = false;
+      // Re-apply renderer state after context restore
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      this.renderer.setSize(window.innerWidth, window.innerHeight);
+      this.renderer.shadowMap.enabled = true;
+      this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      this.renderer.toneMappingExposure = 1.1;
+      // Re-assign material uniforms since context restore invalidates GPU state
+      this.terrain.update(this.atmosphere.sunDirection, this.atmosphere.fogColor);
+      this.water.update(this.clock.elapsedTime, this.atmosphere.fogColor);
+    };
+    canvas.addEventListener('webglcontextlost', onContextLost);
+    canvas.addEventListener('webglcontextrestored', onContextRestored);
+    this.disposeFns.push(() => {
+      canvas.removeEventListener('webglcontextlost', onContextLost);
+      canvas.removeEventListener('webglcontextrestored', onContextRestored);
+    });
+
+    // ── Renderer ──────────────────────────────────────────────────
+    this.renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      powerPreference: 'high-performance',
+    });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.1;
 
-    // Scene
+    // ── Scene ────────────────────────────────────────────────────
     this.scene = new THREE.Scene();
     this.scene.fog = new THREE.Fog(0x60a5fa, 200, 900);
 
-    // Lights
+    // ── Lights ───────────────────────────────────────────────────
     this.ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
     this.scene.add(this.ambientLight);
 
     this.dirLight = new THREE.DirectionalLight(0xfff5e0, 1.2);
     this.dirLight.position.set(100, 150, 50);
     this.dirLight.castShadow = true;
-    this.dirLight.shadow.mapSize.set(2048, 2048);
+    this.dirLight.shadow.mapSize.set(1024, 1024);
     this.dirLight.shadow.camera.near = 1;
     this.dirLight.shadow.camera.far = 400;
     this.dirLight.shadow.camera.left = -80;
@@ -75,12 +107,12 @@ export class GameEngine {
     this.dirLight.shadow.camera.top = 80;
     this.dirLight.shadow.camera.bottom = -80;
     this.scene.add(this.dirLight);
-    this.scene.add(this.dirLight.target); // target must be in scene for updateMatrixWorld
+    this.scene.add(this.dirLight.target);
 
     this.hemiLight = new THREE.HemisphereLight(0x87ceeb, 0x556b2f, 0.3);
     this.scene.add(this.hemiLight);
 
-    // World systems
+    // ── World systems ────────────────────────────────────────────
     this.terrain = new Terrain();
     this.scene.add(this.terrain.mesh);
 
@@ -94,7 +126,6 @@ export class GameEngine {
     this.scene.add(this.player.group);
 
     this.camera = new CameraController();
-    // Initialize camera to match player spawn position (prevents camera underground)
     this.camera.initPosition(this.player.position);
     this.disposeFns.push(this.camera.bindPointer(canvas));
 
@@ -102,17 +133,18 @@ export class GameEngine {
 
     this.world = new World(this.scene);
 
-    // HUD
+    // ── HUD ──────────────────────────────────────────────────────
     this.hud = new HUD(hudContainer);
 
-    // Multiplayer
+    // ── Multiplayer ──────────────────────────────────────────────
     this.mp = new MultiplayerManager();
     this.mp.connect();
     this.setupMultiplayerHandlers();
     this.disposeFns.push(() => this.mp.disconnect());
 
-    // Join after connection
-    setTimeout(() => {
+    // Join after a short delay to ensure connection is established
+    this.joinTimeout = setTimeout(() => {
+      this.joinTimeout = null;
       if (!this.alive) return;
       this.mp.join(
         playerName,
@@ -125,14 +157,21 @@ export class GameEngine {
       this.joined = true;
     }, 500);
 
-    // Chat binding — links chat visibility to player.inputBlocked
+    // Chat binding
     this.disposeFns.push(this.hud.bindChat(this.mp, this.player));
 
-    // Resize
-    const onResize = () => this.renderer.setSize(window.innerWidth, window.innerHeight);
+    // ── Resize handler (updates renderer + camera) ───────────────
+    const onResize = () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      this.renderer.setSize(w, h);
+      this.camera.camera.aspect = w / h;
+      this.camera.camera.updateProjectionMatrix();
+    };
     window.addEventListener('resize', onResize);
     this.disposeFns.push(() => window.removeEventListener('resize', onResize));
 
+    // ── Start render loop ────────────────────────────────────────
     this.loop();
   }
 
@@ -148,7 +187,6 @@ export class GameEngine {
 
     this.mp.on('playerMoved', (data: Partial<RemotePlayer>) => {
       const id = data.id!;
-      // Store target for interpolation
       if (typeof data.x === 'number' && typeof data.z === 'number') {
         this.remoteTargets.set(id, {
           x: data.x,
@@ -239,74 +277,98 @@ export class GameEngine {
 
   private loop = (): void => {
     if (!this.alive) return;
-    requestAnimationFrame(this.loop);
 
-    const dt = Math.min(this.clock.getDelta(), 0.1);
-    const elapsed = this.clock.elapsedTime;
-
-    // Player
-    this.player.update(dt, this.camera.yaw);
-
-    // Camera
-    this.camera.update(dt, this.player);
-
-    // Shadow camera follows player
-    this.dirLight.position.set(
-      this.player.position.x + this.atmosphere.sunDirection.x * 100,
-      this.player.position.y + Math.max(this.atmosphere.sunDirection.y * 150, 30),
-      this.player.position.z + this.atmosphere.sunDirection.z * 100
-    );
-    this.dirLight.target.position.copy(this.player.position);
-
-    // Atmosphere + lighting
-    this.atmosphere.update(dt);
-    this.dirLight.intensity = this.atmosphere.sunIntensity;
-    this.ambientLight.intensity = this.atmosphere.ambientIntensity;
-    (this.scene.fog as THREE.Fog).color.copy(this.atmosphere.fogColor);
-
-    // Terrain + water
-    this.terrain.update(this.atmosphere.sunDirection, this.atmosphere.fogColor);
-    this.water.update(elapsed, this.atmosphere.fogColor);
-
-    // Smooth remote player interpolation (prevents jittery movement)
-    const lerpFactor = 1 - Math.exp(-12 * dt);
-    this.remoteMeshes.forEach((mesh, id) => {
-      const target = this.remoteTargets.get(id);
-      if (target) {
-        mesh.position.x += (target.x - mesh.position.x) * lerpFactor;
-        mesh.position.y += (target.y - mesh.position.y) * lerpFactor;
-        mesh.position.z += (target.z - mesh.position.z) * lerpFactor;
-        mesh.rotation.y += (target.rot - mesh.rotation.y) * lerpFactor;
-      }
-    });
-
-    // Multiplayer sync ~20 Hz
-    this.positionTimer += dt;
-    if (this.positionTimer >= 0.05) {
-      this.positionTimer = 0;
-      this.mp.sendPosition(
-        this.player.position.x,
-        this.player.position.y,
-        this.player.position.z,
-        this.player.rotation,
-        this.player.animation
-      );
+    // Skip rendering if WebGL context is lost — browser will call
+    // onContextRestored when it recovers
+    if (this.contextLost) {
+      requestAnimationFrame(this.loop);
+      return;
     }
 
-    // HUD
-    this.hud.updatePosition(this.player.position.x, this.player.position.z);
-    this.hud.drawMinimap(this.mp.remotePlayers, this.camera.yaw);
-    this.hud.drawNameTags(this.camera.camera, this.mp.remotePlayers);
+    requestAnimationFrame(this.loop);
 
-    // Render
-    this.renderer.render(this.scene, this.camera.camera);
+    try {
+      const dt = Math.min(this.clock.getDelta(), 0.1);
+      const elapsed = this.clock.elapsedTime;
+
+      // Player
+      this.player.update(dt, this.camera.yaw);
+
+      // Camera
+      this.camera.update(dt, this.player);
+
+      // Shadow camera follows player
+      this.dirLight.position.set(
+        this.player.position.x + this.atmosphere.sunDirection.x * 100,
+        this.player.position.y + Math.max(this.atmosphere.sunDirection.y * 150, 30),
+        this.player.position.z + this.atmosphere.sunDirection.z * 100
+      );
+      this.dirLight.target.position.copy(this.player.position);
+
+      // Atmosphere + lighting
+      this.atmosphere.update(dt);
+      this.dirLight.intensity = this.atmosphere.sunIntensity;
+      this.ambientLight.intensity = this.atmosphere.ambientIntensity;
+      (this.scene.fog as THREE.Fog).color.copy(this.atmosphere.fogColor);
+
+      // Terrain + water
+      this.terrain.update(this.atmosphere.sunDirection, this.atmosphere.fogColor);
+      this.water.update(elapsed, this.atmosphere.fogColor);
+
+      // Smooth remote player interpolation
+      const lerpFactor = 1 - Math.exp(-12 * dt);
+      this.remoteMeshes.forEach((mesh, id) => {
+        const target = this.remoteTargets.get(id);
+        if (target) {
+          mesh.position.x += (target.x - mesh.position.x) * lerpFactor;
+          mesh.position.y += (target.y - mesh.position.y) * lerpFactor;
+          mesh.position.z += (target.z - mesh.position.z) * lerpFactor;
+          mesh.rotation.y += (target.rot - mesh.rotation.y) * lerpFactor;
+        }
+      });
+
+      // Multiplayer sync ~20 Hz
+      this.positionTimer += dt;
+      if (this.positionTimer >= 0.05) {
+        this.positionTimer = 0;
+        this.mp.sendPosition(
+          this.player.position.x,
+          this.player.position.y,
+          this.player.position.z,
+          this.player.rotation,
+          this.player.animation
+        );
+      }
+
+      // HUD
+      this.hud.updatePosition(this.player.position.x, this.player.position.z);
+      this.hud.drawMinimap(this.mp.remotePlayers, this.camera.yaw);
+      this.hud.drawNameTags(this.camera.camera, this.mp.remotePlayers);
+
+      // Render
+      this.renderer.render(this.scene, this.camera.camera);
+    } catch (err) {
+      // Log once per second to avoid console spam, but keep the loop alive
+      console.error('[Engine] Render frame error:', err);
+    }
   };
 
   dispose(): void {
     this.alive = false;
-    this.disposeFns.forEach(fn => fn());
+
+    // Clear multiplayer join timeout
+    if (this.joinTimeout !== null) {
+      clearTimeout(this.joinTimeout);
+      this.joinTimeout = null;
+    }
+
+    // Clean up all bound event listeners
+    this.disposeFns.forEach(fn => {
+      try { fn(); } catch { /* best-effort */ }
+    });
     this.disposeFns = [];
 
+    // Clean up remote player meshes
     this.remoteMeshes.forEach(mesh => {
       this.scene.remove(mesh);
       this.disposeMeshGroup(mesh);
@@ -314,18 +376,31 @@ export class GameEngine {
     this.remoteMeshes.clear();
     this.remoteTargets.clear();
 
-    this.terrain.mesh.geometry.dispose();
-    (this.terrain.mesh.material as THREE.ShaderMaterial).dispose();
+    // Clean up terrain, water, atmosphere
+    try {
+      this.terrain.mesh.geometry.dispose();
+      (this.terrain.mesh.material as THREE.ShaderMaterial).dispose();
+    } catch { /* best-effort */ }
 
-    this.water.mesh.geometry.dispose();
-    (this.water.mesh.material as THREE.ShaderMaterial).dispose();
+    try {
+      this.water.mesh.geometry.dispose();
+      (this.water.mesh.material as THREE.ShaderMaterial).dispose();
+    } catch { /* best-effort */ }
 
-    this.atmosphere.skyMesh.geometry.dispose();
-    (this.atmosphere.skyMesh.material as THREE.ShaderMaterial).dispose();
+    try {
+      this.atmosphere.skyMesh.geometry.dispose();
+      (this.atmosphere.skyMesh.material as THREE.ShaderMaterial).dispose();
+    } catch { /* best-effort */ }
 
-    this.disposeMeshGroup(this.player.group);
-    this.scene.remove(this.player.group);
+    // Clean up player
+    try {
+      this.disposeMeshGroup(this.player.group);
+      this.scene.remove(this.player.group);
+    } catch { /* best-effort */ }
 
-    this.renderer.dispose();
+    // Dispose renderer (frees GPU memory)
+    try {
+      this.renderer.dispose();
+    } catch { /* best-effort */ }
   }
 }

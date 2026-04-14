@@ -65,17 +65,13 @@ export class CameraController {
     };
     canvas.addEventListener('wheel', onWheel, { passive: true });
 
-    const onResize = () => {
-      this.camera.aspect = window.innerWidth / window.innerHeight;
-      this.camera.updateProjectionMatrix();
-    };
-    window.addEventListener('resize', onResize);
+    // Note: resize is handled by GameEngine's resize handler which updates
+    // both renderer.setSize() and camera.aspect/updateProjectionMatrix()
 
     return () => {
       canvas.removeEventListener('click', onClick);
       document.removeEventListener('mousemove', onMove);
       canvas.removeEventListener('wheel', onWheel);
-      window.removeEventListener('resize', onResize);
     };
   }
 
