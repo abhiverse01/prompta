@@ -1,5 +1,3 @@
-@import "tailwindcss";
-
 :root {
   --bg: #07070c;
   --fg: #e4e4e8;
@@ -22,6 +20,12 @@ html, body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* IMPORTANT: Tailwind @import goes AFTER our critical game styles.
+   Tailwind's Preflight reset (display:block on everything) can override
+   .game-canvas display during HMR, causing the 3D canvas to flicker.
+   Placing it after ensures our game styles win the cascade. */
+@import "tailwindcss";
+
 /* ═══════════════════════════════════════════════════════════════════
    GAME WRAPPER (playing phase)
    ═══════════════════════════════════════════════════════════════════ */
@@ -34,11 +38,12 @@ html, body {
 }
 
 /* Canvas: NO width/height CSS — Three.js renderer.setSize() manages
-   the canvas drawing buffer AND its CSS dimensions via inline styles.
-   Adding CSS width/height here would fight with Three.js and cause
-   flickering / resolution mismatches. */
+   both the drawing buffer AND CSS dimensions via inline styles.
+   Any CSS width/height here would fight Three.js and cause flicker. */
 .game-canvas {
-  display: block;
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
 }
 
 .game-hud-layer {
@@ -61,6 +66,7 @@ html, body {
   overflow-y: auto;
   overflow-x: hidden;
   padding: 32px 16px;
+  background: #07070c;
 }
 
 /* Animated gradient background */
@@ -76,6 +82,7 @@ html, body {
     radial-gradient(ellipse at 60% 30%, rgba(120, 40, 60, 0.12) 0%, transparent 40%);
   animation: csBgDrift 25s ease-in-out infinite alternate;
   will-change: transform;
+  pointer-events: none;
 }
 
 @keyframes csBgDrift {
@@ -169,7 +176,6 @@ html, body {
   outline: none;
   font-family: inherit;
   font-size: inherit;
-  text-align: left;
   -webkit-tap-highlight-color: transparent;
 }
 

@@ -34,14 +34,14 @@ export class GameEngine {
   private hemiLight!: THREE.HemisphereLight;
 
   private remoteMeshes = new Map<string, THREE.Group>();
-  /** Target positions for smooth remote player interpolation */
   private remoteTargets = new Map<string, { x: number; y: number; z: number; rot: number }>();
   private disposeFns: (() => void)[] = [];
   private positionTimer = 0;
   private alive = true;
-  private joined = false;
   private contextLost = false;
   private joinTimeout: ReturnType<typeof setTimeout> | null = null;
+  private frameCount = 0;
+  private lastErrorFrame = -100;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -58,15 +58,19 @@ export class GameEngine {
     const onContextRestored = () => {
       console.log('[Engine] WebGL context restored — resuming');
       this.contextLost = false;
+      // Reset the clock so getDelta() doesn't return a huge value
+      // which would cause a physics explosion
+      this.clock.start();
+      this.clock.elapsedTime = 0;
       // Re-apply renderer state after context restore
       this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       this.renderer.setSize(window.innerWidth, window.innerHeight);
       this.renderer.shadowMap.enabled = true;
+      this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
       this.renderer.toneMappingExposure = 1.1;
-      // Re-assign material uniforms since context restore invalidates GPU state
-      this.terrain.update(this.atmosphere.sunDirection, this.atmosphere.fogColor);
-      this.water.update(this.clock.elapsedTime, this.atmosphere.fogColor);
+      // Force all materials to recompile shaders
+      this.renderer.compile(this.scene, this.camera.camera);
     };
     canvas.addEventListener('webglcontextlost', onContextLost);
     canvas.addEventListener('webglcontextrestored', onContextRestored);
@@ -142,7 +146,7 @@ export class GameEngine {
     this.setupMultiplayerHandlers();
     this.disposeFns.push(() => this.mp.disconnect());
 
-    // Join after a short delay to ensure connection is established
+    // Join after connection established
     this.joinTimeout = setTimeout(() => {
       this.joinTimeout = null;
       if (!this.alive) return;
@@ -154,13 +158,12 @@ export class GameEngine {
         this.player.position.y,
         this.player.position.z
       );
-      this.joined = true;
     }, 500);
 
     // Chat binding
     this.disposeFns.push(this.hud.bindChat(this.mp, this.player));
 
-    // ── Resize handler (updates renderer + camera) ───────────────
+    // ── Resize handler (updates renderer + camera together) ───────
     const onResize = () => {
       const w = window.innerWidth;
       const h = window.innerHeight;
@@ -278,44 +281,56 @@ export class GameEngine {
   private loop = (): void => {
     if (!this.alive) return;
 
-    // Skip rendering if WebGL context is lost — browser will call
-    // onContextRestored when it recovers
+    // Skip rendering if WebGL context is lost
     if (this.contextLost) {
       requestAnimationFrame(this.loop);
       return;
     }
 
     requestAnimationFrame(this.loop);
+    this.frameCount++;
 
     try {
-      const dt = Math.min(this.clock.getDelta(), 0.1);
+      // Cap dt to prevent physics explosions (e.g. after tab backgrounding
+      // or WebGL context restore where clock.getDelta() can return seconds)
+      let dt = this.clock.getDelta();
+      if (dt > 0.1) dt = 1 / 60; // snap to 60fps equivalent
+
       const elapsed = this.clock.elapsedTime;
 
-      // Player
+      // ── Player ──────────────────────────────────────────────────
       this.player.update(dt, this.camera.yaw);
 
-      // Camera
+      // Guard: if player position becomes NaN (extreme physics edge case),
+      // reset to spawn to prevent cascading NaN propagation
+      if (isNaN(this.player.position.x) || isNaN(this.player.position.y) || isNaN(this.player.position.z)) {
+        this.player.position.set(0, 30, 0);
+        this.player.velocityY = 0;
+      }
+
+      // ── Camera ──────────────────────────────────────────────────
       this.camera.update(dt, this.player);
 
-      // Shadow camera follows player
+      // ── Shadow camera follows player ────────────────────────────
+      const sunY = this.atmosphere.sunDirection.y;
       this.dirLight.position.set(
         this.player.position.x + this.atmosphere.sunDirection.x * 100,
-        this.player.position.y + Math.max(this.atmosphere.sunDirection.y * 150, 30),
+        this.player.position.y + Math.max(sunY * 150, 30),
         this.player.position.z + this.atmosphere.sunDirection.z * 100
       );
       this.dirLight.target.position.copy(this.player.position);
 
-      // Atmosphere + lighting
+      // ── Atmosphere + lighting ───────────────────────────────────
       this.atmosphere.update(dt);
       this.dirLight.intensity = this.atmosphere.sunIntensity;
       this.ambientLight.intensity = this.atmosphere.ambientIntensity;
       (this.scene.fog as THREE.Fog).color.copy(this.atmosphere.fogColor);
 
-      // Terrain + water
+      // ── Terrain + water ─────────────────────────────────────────
       this.terrain.update(this.atmosphere.sunDirection, this.atmosphere.fogColor);
       this.water.update(elapsed, this.atmosphere.fogColor);
 
-      // Smooth remote player interpolation
+      // ── Smooth remote player interpolation ──────────────────────
       const lerpFactor = 1 - Math.exp(-12 * dt);
       this.remoteMeshes.forEach((mesh, id) => {
         const target = this.remoteTargets.get(id);
@@ -327,7 +342,7 @@ export class GameEngine {
         }
       });
 
-      // Multiplayer sync ~20 Hz
+      // ── Multiplayer sync ~20 Hz ─────────────────────────────────
       this.positionTimer += dt;
       if (this.positionTimer >= 0.05) {
         this.positionTimer = 0;
@@ -340,35 +355,37 @@ export class GameEngine {
         );
       }
 
-      // HUD
+      // ── HUD ─────────────────────────────────────────────────────
       this.hud.updatePosition(this.player.position.x, this.player.position.z);
       this.hud.drawMinimap(this.mp.remotePlayers, this.camera.yaw);
       this.hud.drawNameTags(this.camera.camera, this.mp.remotePlayers);
 
-      // Render
+      // ── Render ──────────────────────────────────────────────────
       this.renderer.render(this.scene, this.camera.camera);
+
     } catch (err) {
-      // Log once per second to avoid console spam, but keep the loop alive
-      console.error('[Engine] Render frame error:', err);
+      // Log errors but throttle to once per 60 frames (1 second at 60fps)
+      // to avoid console spam while keeping the loop alive
+      if (this.frameCount - this.lastErrorFrame > 60) {
+        console.error('[Engine] Render frame error:', err);
+        this.lastErrorFrame = this.frameCount;
+      }
     }
   };
 
   dispose(): void {
     this.alive = false;
 
-    // Clear multiplayer join timeout
     if (this.joinTimeout !== null) {
       clearTimeout(this.joinTimeout);
       this.joinTimeout = null;
     }
 
-    // Clean up all bound event listeners
     this.disposeFns.forEach(fn => {
       try { fn(); } catch { /* best-effort */ }
     });
     this.disposeFns = [];
 
-    // Clean up remote player meshes
     this.remoteMeshes.forEach(mesh => {
       this.scene.remove(mesh);
       this.disposeMeshGroup(mesh);
@@ -376,7 +393,6 @@ export class GameEngine {
     this.remoteMeshes.clear();
     this.remoteTargets.clear();
 
-    // Clean up terrain, water, atmosphere
     try {
       this.terrain.mesh.geometry.dispose();
       (this.terrain.mesh.material as THREE.ShaderMaterial).dispose();
@@ -392,13 +408,11 @@ export class GameEngine {
       (this.atmosphere.skyMesh.material as THREE.ShaderMaterial).dispose();
     } catch { /* best-effort */ }
 
-    // Clean up player
     try {
       this.disposeMeshGroup(this.player.group);
       this.scene.remove(this.player.group);
     } catch { /* best-effort */ }
 
-    // Dispose renderer (frees GPU memory)
     try {
       this.renderer.dispose();
     } catch { /* best-effort */ }

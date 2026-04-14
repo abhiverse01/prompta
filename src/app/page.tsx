@@ -12,55 +12,63 @@ export default function GamePage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const hudRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<GameEngine | null>(null);
+  // Track which phase we actually created an engine for, to avoid
+  // re-creating on HMR when phase hasn't changed.
+  const enginePhaseRef = useRef<string | null>(null);
 
   // Clean up engine on unmount
   useEffect(() => {
     return () => {
-      engineRef.current?.dispose();
-      engineRef.current = null;
+      if (engineRef.current) {
+        engineRef.current.dispose();
+        engineRef.current = null;
+        enginePhaseRef.current = null;
+      }
     };
   }, []);
 
-  // Create engine when entering playing phase
+  // Create engine immediately when phase becomes 'playing'
   useEffect(() => {
-    if (phase !== 'playing' || !canvasRef.current || !hudRef.current || !selectedChar) return;
+    if (phase !== 'playing') return;
 
-    // Dispose any previous engine to prevent duplicates
+    // Don't re-create if we already have a running engine for this phase
+    if (enginePhaseRef.current === 'playing' && engineRef.current) return;
+
+    const canvas = canvasRef.current;
+    const hud = hudRef.current;
+    if (!canvas || !hud || !selectedChar) return;
+
+    // Dispose any previous engine
     if (engineRef.current) {
       engineRef.current.dispose();
       engineRef.current = null;
     }
 
-    let disposed = false;
-
-    const timer = setTimeout(() => {
-      if (disposed || !canvasRef.current || !hudRef.current) return;
-
-      try {
-        engineRef.current = new GameEngine(
-          canvasRef.current,
-          {
-            id: selectedChar.id,
-            name: selectedChar.name,
-            color: selectedChar.color,
-            accent: selectedChar.accent,
-          },
-          playerName || selectedChar.name,
-          hudRef.current
-        );
-      } catch (err) {
-        console.error('[Page] Failed to create game engine:', err);
-        if (!disposed) {
-          setErrorMsg(err instanceof Error ? err.message : 'Failed to start the game engine');
-          setPhase('error');
-        }
-      }
-    }, 100);
-
-    return () => {
-      disposed = true;
-      clearTimeout(timer);
-    };
+    try {
+      engineRef.current = new GameEngine(
+        canvas,
+        {
+          id: selectedChar.id,
+          name: selectedChar.name,
+          color: selectedChar.color,
+          accent: selectedChar.accent,
+        },
+        playerName || selectedChar.name,
+        hud,
+      );
+      enginePhaseRef.current = 'playing';
+    } catch (err) {
+      console.error('[Page] Failed to create game engine:', err);
+      engineRef.current = null;
+      enginePhaseRef.current = null;
+      // Schedule error state update outside the synchronous effect body
+      // to satisfy React's set-state-in-effect rule
+      const msg = err instanceof Error ? err.message : 'Failed to start the game engine';
+      queueMicrotask(() => {
+        setErrorMsg(msg);
+        setPhase('error');
+      });
+    }
   }, [phase, selectedChar, playerName]);
 
   const handleEnter = useCallback(() => {
@@ -75,6 +83,7 @@ export default function GamePage() {
     if (engineRef.current) {
       engineRef.current.dispose();
       engineRef.current = null;
+      enginePhaseRef.current = null;
     }
     setPhase('select');
   }, []);
