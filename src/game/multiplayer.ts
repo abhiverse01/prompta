@@ -39,61 +39,87 @@ export class MultiplayerManager {
     serverInfo:   [] as Callback<{ message: string; count: number }>[],
   };
 
+  private connectAttempted = false;
+  private connectTimeout: ReturnType<typeof setTimeout> | null = null;
+
   connect(): void {
-    this.socket = io({
-      transports: ['websocket', 'polling'],
-      reconnection: true,
-      reconnectionAttempts: 10,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
-    });
+    if (this.connectAttempted) return;
+    this.connectAttempted = true;
 
-    this.socket.on('connect', () => {
-      console.log('[Multiplayer] Connected:', this.socket!.id);
-      this.connected = true;
-    });
+    try {
+      this.socket = io({
+        transports: ['websocket', 'polling'],
+        reconnection: true,
+        reconnectionAttempts: 5,
+        reconnectionDelay: 2000,
+        reconnectionDelayMax: 10000,
+        timeout: 5000,
+      });
 
-    this.socket.on('player:id', (id: string) => {
-      this.myId = id;
-      console.log('[Multiplayer] Assigned ID:', id);
-    });
+      // Timeout: if we can't connect in 3s, just continue without multiplayer
+      this.connectTimeout = setTimeout(() => {
+        if (!this.connected) {
+          console.warn('[Multiplayer] Connection timeout — continuing in single-player mode');
+        }
+      }, 3000);
 
-    this.socket.on('world:state', (players: RemotePlayer[]) => {
-      this.callbacks.worldState.forEach(cb => cb(players));
-    });
+      this.socket.on('connect', () => {
+        console.log('[Multiplayer] Connected:', this.socket!.id);
+        this.connected = true;
+        if (this.connectTimeout) {
+          clearTimeout(this.connectTimeout);
+          this.connectTimeout = null;
+        }
+      });
 
-    this.socket.on('player:joined', (p: RemotePlayer) => {
-      this.callbacks.playerJoined.forEach(cb => cb(p));
-    });
+      this.socket.on('player:id', (id: string) => {
+        this.myId = id;
+        console.log('[Multiplayer] Assigned ID:', id);
+      });
 
-    this.socket.on('player:moved', (data: Partial<RemotePlayer>) => {
-      this.callbacks.playerMoved.forEach(cb => cb(data));
-    });
+      this.socket.on('world:state', (players: RemotePlayer[]) => {
+        this.callbacks.worldState.forEach(cb => cb(players));
+      });
 
-    this.socket.on('player:left', (data: { id: string }) => {
-      this.callbacks.playerLeft.forEach(cb => cb(data));
-    });
+      this.socket.on('player:joined', (p: RemotePlayer) => {
+        this.callbacks.playerJoined.forEach(cb => cb(p));
+      });
 
-    this.socket.on('chat:message', (msg: ChatMessage) => {
-      this.messages.push(msg);
-      if (this.messages.length > 50) this.messages.shift();
-      this.callbacks.chatMessage.forEach(cb => cb(msg));
-    });
+      this.socket.on('player:moved', (data: Partial<RemotePlayer>) => {
+        this.callbacks.playerMoved.forEach(cb => cb(data));
+      });
 
-    this.socket.on('server:info', (info: { message: string; count: number }) => {
-      this.playerCount = info.count;
-      this.callbacks.serverInfo.forEach(cb => cb(info));
-    });
+      this.socket.on('player:left', (data: { id: string }) => {
+        this.callbacks.playerLeft.forEach(cb => cb(data));
+      });
 
-    this.socket.on('disconnect', (reason) => {
-      console.log('[Multiplayer] Disconnected:', reason);
-      this.connected = false;
-    });
+      this.socket.on('chat:message', (msg: ChatMessage) => {
+        this.messages.push(msg);
+        if (this.messages.length > 50) this.messages.shift();
+        this.callbacks.chatMessage.forEach(cb => cb(msg));
+      });
 
-    this.socket.on('connect_error', (err) => {
-      console.warn('[Multiplayer] Connection error:', err.message);
-      this.connected = false;
-    });
+      this.socket.on('server:info', (info: { message: string; count: number }) => {
+        this.playerCount = info.count;
+        this.callbacks.serverInfo.forEach(cb => cb(info));
+      });
+
+      this.socket.on('disconnect', (reason) => {
+        console.log('[Multiplayer] Disconnected:', reason);
+        this.connected = false;
+      });
+
+      this.socket.on('connect_error', (err) => {
+        console.warn('[Multiplayer] Connection error:', err.message);
+        this.connected = false;
+        // Don't keep trying forever — Socket.IO's built-in reconnection
+        // with reconnectionAttempts: 5 will stop after 5 tries
+      });
+    } catch (err) {
+      // Socket.IO library itself failed to initialize (very rare)
+      console.warn('[Multiplayer] Failed to initialize:', err);
+      this.socket = null;
+    }
   }
 
   join(name: string, characterType: number, color: string, x: number, y: number, z: number): void {
@@ -122,11 +148,16 @@ export class MultiplayerManager {
   }
 
   disconnect(): void {
+    if (this.connectTimeout) {
+      clearTimeout(this.connectTimeout);
+      this.connectTimeout = null;
+    }
     if (this.socket) {
       this.socket.removeAllListeners();
       this.socket.disconnect();
       this.socket = null;
     }
     this.connected = false;
+    this.connectAttempted = false;
   }
 }

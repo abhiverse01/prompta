@@ -32,3 +32,29 @@ Stage Summary:
 - All game modules type-check clean (0 TS errors in src/)
 - ESLint passes clean (0 errors after config fix)
 - Game flow verified: character select → loading → game engine creation → render loop
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Fix "localhost refused to connect" - ROOT CAUSE FIX
+
+Work Log:
+- Discovered zombie node server.js process (PID 5526) was running but NOT bound to port 3000
+- Killed all zombie processes, freed port 3000
+- ROOT CAUSE IDENTIFIED: package.json had "dev": "node server.js" (custom server)
+  - The system auto dev server expects standard "next dev" to manage the lifecycle
+  - Custom server.js with raw http.createServer() breaks the system's dev server management
+  - Socket.IO attached to custom server never gets started properly by the system
+- Changed "dev" script to "next dev --turbopack" (standard Next.js dev server)
+- Changed "start" script to "next start" (standard Next.js production server)
+- Updated multiplayer.ts: added connection timeout (3s), graceful single-player fallback,
+  try/catch around Socket.IO initialization, reduced reconnection attempts
+- Verified: `next dev --turbopack` starts in 352ms, page loads HTTP 200, 14KB HTML served
+- Verified: 0 TypeScript errors, 0 ESLint errors
+- Cleaned .next cache, killed all stale processes
+
+Stage Summary:
+- The game now uses standard Next.js dev server (no custom server.js for dev)
+- Socket.IO client gracefully degrades to single-player when no server available
+- server.js kept for reference if user wants to run custom multiplayer server separately
+- Game loads and runs as single-player 3D open world
