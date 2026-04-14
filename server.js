@@ -1,17 +1,13 @@
-const express = require('express');
 const { createServer } = require('http');
-const { Server } = require('socket.io');
 const next = require('next');
+const { Server } = require('socket.io');
 
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = 'localhost';
 const port = parseInt(process.env.PORT || '3000', 10);
 
-const app = next({ dev, hostname, port });
-const handle = app.getRequestHandler();
-
+// ── In-memory state ──────────────────────────────────────────────
 const players = new Map();
-/** Per-socket rate limit buckets — cleaned up on disconnect */
 const rateLimiters = new Map();
 
 function sanitizeName(str) {
@@ -44,11 +40,18 @@ function createRateLimiter(maxCalls, windowMs) {
   };
 }
 
-app.prepare().then(() => {
-  const expressApp = express();
-  const httpServer = createServer(expressApp);
+// ── Next.js app ──────────────────────────────────────────────────
+const app = next({ dev, hostname, port });
+const handle = app.getRequestHandler();
 
-  const io = new Server(httpServer, {
+app.prepare().then(() => {
+  // ── HTTP server — Next.js handles ALL requests (pages, _next/*, etc.) ──
+  const server = createServer((req, res) => {
+    handle(req, res);
+  });
+
+  // ── Socket.IO attached to the same server ───────────────────────
+  const io = new Server(server, {
     path: '/socket.io',
     cors: { origin: '*' },
   });
@@ -56,7 +59,6 @@ app.prepare().then(() => {
   io.on('connection', (socket) => {
     console.log(`[+] Player connected: ${socket.id}`);
 
-    // Per-socket rate limiters
     const moveLimiter = createRateLimiter(40, 1000);
     const chatLimiter = createRateLimiter(2, 2000);
     rateLimiters.set(socket.id, { moveLimiter, chatLimiter });
@@ -133,14 +135,12 @@ app.prepare().then(() => {
         });
         console.log(`[<] ${player.name} disconnected (${players.size} online)`);
       }
-      // Clean up rate limiter to prevent memory leak
       rateLimiters.delete(socket.id);
     });
   });
 
-  expressApp.all('/{*splat}', (req, res) => handle(req, res));
-
-  httpServer.listen(port, hostname, () => {
+  // ── Start ───────────────────────────────────────────────────────
+  server.listen(port, hostname, () => {
     console.log(`\n  ▸ Game server  → http://${hostname}:${port}`);
     console.log(`  ▸ Socket.IO    → ws://${hostname}:${port}/socket.io\n`);
   });

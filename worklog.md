@@ -225,3 +225,42 @@ Stage Summary:
 - WebGL context restore is now fault-tolerant
 - Resize handler is debounced to prevent flicker
 - React lifecycle is properly managed with cleanup for all timers and engines
+
+---
+Task ID: 4
+Agent: Main
+Task: Fix game not loading — root cause was Express 5 intercepting Next.js Turbopack static chunks
+
+Work Log:
+- Investigated server process: confirmed it starts but all JS chunks return 0 bytes
+- Discovered Express 5 custom server with `app.all('/{*splat}', ...)` was intercepting ALL requests
+  including `_next/static/chunks/*` before Next.js Turbopack could serve them
+- HTML page rendered correctly via SSR but JavaScript bundles never loaded in the browser
+- This caused the game to show a blank white screen — the character selection HTML was there
+  but none of the React/Three.js/Socket.IO code could execute
+
+FIX: Completely rewrote server.js to remove Express dependency:
+- Replaced `express()` + `createServer(expressApp)` with bare `createServer()`
+- Changed from `expressApp.all('/{*splat}', handler)` to `createServer((req, res) => handle(req, res))`
+- Socket.IO now attaches directly to the raw HTTP server instead of through Express
+- All game logic (sanitization, rate limiting, multiplayer) preserved exactly as-is
+
+VERIFICATION (comprehensive one-shot test):
+- HTML page: 14,356 bytes ✅
+- "Enter the Realm" title in HTML ✅
+- Character cards (Warrior, Mage, etc.) in HTML ✅
+- Name input in HTML ✅
+- Three.js module chunk: 811,406 bytes ✅
+- Game modules chunk: 197,902 bytes ✅
+- Page component chunk: 414 bytes ✅
+- ALL 19 static JS chunks: 19/19 loaded successfully ✅
+- Socket.IO endpoint: HTTP 200 ✅
+- Server stable over 15 sequential requests ✅
+- 0 TypeScript errors, 0 ESLint errors
+
+Stage Summary:
+- ROOT CAUSE: Express 5 was intercepting _next/static/* chunk requests, returning empty responses
+- The HTML page loaded fine (SSR) but zero JavaScript executed in the browser
+- Fix: Removed Express entirely, use raw http.createServer + next.getRequestHandler()
+- This is the recommended pattern for custom Next.js servers with WebSocket libraries
+- Game should now fully load: character selection → loading → 3D gameplay
