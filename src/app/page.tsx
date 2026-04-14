@@ -13,8 +13,6 @@ export default function GamePage() {
   const hudRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<GameEngine | null>(null);
   const loadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Track which phase we actually created an engine for, to avoid
-  // re-creating on HMR when phase hasn't changed.
   const enginePhaseRef = useRef<string | null>(null);
 
   // Clean up engine on unmount
@@ -41,7 +39,14 @@ export default function GamePage() {
 
     const canvas = canvasRef.current;
     const hud = hudRef.current;
-    if (!canvas || !hud || !selectedChar) return;
+    if (!canvas || !hud || !selectedChar) {
+      console.warn('[Page] Missing refs, cannot create engine:', {
+        canvas: !!canvas,
+        hud: !!hud,
+        selectedChar: !!selectedChar,
+      });
+      return;
+    }
 
     // Dispose any previous engine
     if (engineRef.current) {
@@ -50,14 +55,19 @@ export default function GamePage() {
       enginePhaseRef.current = null;
     }
 
-    // Wait for the next animation frame so the browser has finished
-    // layout and the canvas has valid clientWidth/clientHeight.
-    // Without this delay, canvas.getBoundingClientRect() can return 0x0
-    // on some browsers, causing Three.js to create a 0x0 WebGL context.
+    // Use requestAnimationFrame to ensure the canvas has been laid out
+    // by the browser before we read its dimensions and create WebGL.
+    // A single frame is enough — we do NOT need multiple frames.
+    let cancelled = false;
     const raf = requestAnimationFrame(() => {
-      if (!canvas.isConnected) return; // canvas was unmounted during the frame wait
+      if (cancelled) return;
+      if (!canvas.isConnected) {
+        console.warn('[Page] Canvas was unmounted during rAF wait');
+        return;
+      }
 
       try {
+        console.log('[Page] Creating game engine...');
         engineRef.current = new GameEngine(
           canvas,
           {
@@ -81,7 +91,10 @@ export default function GamePage() {
       }
     });
 
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
+    };
   }, [phase, selectedChar, playerName]);
 
   const handleEnter = useCallback(() => {

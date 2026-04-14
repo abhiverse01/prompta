@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Unrelated skill directories — not part of the game app
+    "skills/**",
+    "download/**",
+    "server.js",
   ]),
 ]);
 
