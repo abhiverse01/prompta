@@ -43,3 +43,20 @@ Stage Summary:
 - All UI elements use bulletproof `position: fixed` with `100vw × 100dvh` dimensions
 - Character selection, loading screen, error screen, and game canvas all render fullscreen
 - No CSS layer conflicts possible — all styles are unlayered and explicit
+
+---
+Task ID: 1
+Agent: main
+Task: Fix build failure, CSS layout issues, and Tailwind interference
+
+Work Log:
+- Diagnosed tsconfig.json include patterns: `"**/*.ts"` sweeps up `skills/ASR/scripts/asr.ts` which imports `z-ai-web-dev-sdk` (not available). Changed include to `["src/**/*.ts", "src/**/*.tsx", "next-env.d.ts", ".next/types/**/*.ts"]` and removed the now-unnecessary `exclude` field.
+- Found root cause of "UI in small region": `layout.tsx` was missing `import "./globals.css"`. Without this import, none of the custom CSS (fullscreen positioning, character selection styles, game wrapper) was loaded. Added the import.
+- Removed `@tailwindcss/postcss` and `tailwindcss` from devDependencies to prevent Next.js 16 from auto-detecting and injecting Tailwind's preflight/reset CSS which would conflict with the custom CSS reset.
+- Ran `bun run lint` — passes clean with no errors.
+
+Stage Summary:
+- Build failure: Fixed (tsconfig.json now only includes src/)
+- CSS not loading: Fixed (globals.css import added to layout.tsx)
+- Tailwind interference: Fixed (removed tailwindcss packages)
+- Lint: Passes clean
